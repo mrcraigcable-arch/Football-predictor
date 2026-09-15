@@ -6,12 +6,13 @@ from collections import defaultdict, deque
 from datetime import date
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V10", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V11", page_icon="📈", layout="wide")
 
 
 
-# --- V10 VISUAL SYSTEM: mobile-first neon dashboard ---
+# --- V11 VISUAL SYSTEM: mobile-first neon dashboard ---
 st.markdown("""
 <style>
 :root{
@@ -86,24 +87,24 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 [data-testid="stDataFrame"]{border-radius:16px;overflow:hidden;border:1px solid var(--line)}
 
 /* visual badges reusable from markdown */
-.v10-brand{
+.v11-brand{
  border:1px solid #0b8057;border-radius:18px;padding:16px 18px;margin:4px 0 16px;
  background:linear-gradient(135deg,rgba(0,239,131,.12),rgba(5,29,46,.92) 45%,rgba(10,67,95,.35));
  box-shadow:0 8px 30px rgba(0,0,0,.20)
 }
-.v10-brandline{display:flex;align-items:center;gap:12px}
-.v10-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
-.v10-title{font-size:1.55rem;font-weight:900;line-height:1.05}
-.v10-title b{color:var(--green)}
-.v10-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
-.v10-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
+.v11-brandline{display:flex;align-items:center;gap:12px}
+.v11-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
+.v11-title{font-size:1.55rem;font-weight:900;line-height:1.05}
+.v11-title b{color:var(--green)}
+.v11-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
+.v11-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
  padding:5px 11px;color:#00f18a;font-weight:900;background:#06251b}
-.v10-section{
+.v11-section{
  margin:18px 0 10px;padding:10px 13px;border-left:4px solid var(--cyan);
  background:linear-gradient(90deg,rgba(20,158,255,.13),transparent);
  border-radius:10px;font-weight:850;font-size:1.22rem
 }
-.v10-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
+.v11-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
  margin:8px 0 16px;color:#d9e7f3}
 .green{color:var(--green)} .amber{color:var(--amber)} .red{color:var(--red)} .blue{color:#2b9cff}
 
@@ -113,28 +114,28 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 }
 @media(max-width:699px){
  .block-container{padding-left:.85rem;padding-right:.85rem}
- .v10-title{font-size:1.35rem}
+ .v11-title{font-size:1.35rem}
  h1{font-size:2rem}
  h2{font-size:1.65rem}
  div[data-testid="stMetric"]{min-height:96px}
 }
 
 /* bottom visual nav */
-.v10-nav{
+.v11-nav{
  position:fixed;left:0;right:0;bottom:0;z-index:999;
  display:flex;justify-content:space-around;align-items:center;
  padding:10px 8px calc(10px + env(safe-area-inset-bottom));
  background:rgba(3,17,29,.96);border-top:1px solid #17425e;
  backdrop-filter:blur(14px);box-shadow:0 -8px 25px rgba(0,0,0,.30)
 }
-.v10-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
-.v10-nav .active{color:var(--green);font-weight:800}
+.v11-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
+.v11-nav .active{color:var(--green);font-weight:800}
 </style>
-<div class="v10-brand">
- <span class="v10-chip">V10</span>
- <div class="v10-brandline"><span class="v10-logo">📈</span>
- <div><div class="v10-title">Craig's Football <b>Predictor</b></div>
- <div class="v10-sub">Data. Discipline. Better decisions. • Real market comparison</div></div></div>
+<div class="v11-brand">
+ <span class="v11-chip">V11</span>
+ <div class="v11-brandline"><span class="v11-logo">📈</span>
+ <div><div class="v11-title">Craig's Football <b>Predictor</b></div>
+ <div class="v11-sub">Data. Discipline. Better decisions. • Real market comparison</div></div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -168,7 +169,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V10</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V11</span></div>
   <div class="brand-sub">Data. Discipline. Better decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -188,7 +189,7 @@ LEAGUES={
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV10/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV11/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -328,6 +329,59 @@ def consensus_for(events,home,away):
     inv=1/med; fair=inv/inv.sum()
     return med,fair,len(books)
 
+
+@st.cache_data(ttl=3600,show_spinner=False)
+def chronological_backtest(code):
+    f,_,_,_=make_training(code)
+    if len(f)<500: raise RuntimeError("Not enough historical matches for a meaningful holdout.")
+    f=f.reset_index(drop=True); cut=int(len(f)*.80)
+    tr,te=f.iloc[:cut],f.iloc[cut:]
+    model=HistGradientBoostingClassifier(max_iter=180,max_leaf_nodes=15,l2_regularization=2,random_state=42)
+    model.fit(tr[FEATURES].fillna(0),tr["y"])
+    proba=model.predict_proba(te[FEATURES].fillna(0))
+    actual=te["y"].to_numpy(); pred=np.argmax(proba,axis=1); conf=np.max(proba,axis=1)
+    correct=pred==actual; rows=[]
+    for lo,hi in [(0,.50),(.50,.55),(.55,.60),(.60,.65),(.65,.70),(.70,.75),(.75,1.01)]:
+        m=(conf>=lo)&(conf<hi)
+        if m.sum():
+            rows.append({"Confidence band":f"{int(lo*100)}–{int(min(hi,1)*100)}%",
+                         "Predictions":int(m.sum()),
+                         "Average stated %":round(float(conf[m].mean()*100),1),
+                         "Actual win %":round(float(correct[m].mean()*100),1),
+                         "Calibration gap pp":round(float((conf[m].mean()-correct[m].mean())*100),1)})
+    onehot=np.eye(3)[actual]
+    brier=float(np.mean(np.sum((proba-onehot)**2,axis=1)))
+    return {"train_n":len(tr),"test_n":len(te),"accuracy":float(correct.mean()),
+            "logloss":float(log_loss(actual,proba,labels=[0,1,2])),
+            "brier":brier,"bands":pd.DataFrame(rows)}
+
+def calibration_grade(gap):
+    a=abs(float(gap))
+    return "GOOD" if a<=3 else ("WATCH" if a<=6 else "POOR")
+
+st.markdown('<div class="v11-section">🧪 Model validation</div>', unsafe_allow_html=True)
+with st.expander("Run chronological backtest",expanded=False):
+    st.caption("Train on the earlier 80% of historical matches and test only on the later unseen 20%.")
+    bt_league=st.selectbox("Backtest competition",list(LEAGUES),key="bt_league")
+    if st.button("RUN BACKTEST",use_container_width=True,key="run_bt"):
+        with st.spinner("Running chronological holdout test..."):
+            try:
+                bt=chronological_backtest(LEAGUES[bt_league]["of"])
+                a,b,c=st.columns(3)
+                a.metric("Holdout accuracy",f'{bt["accuracy"]*100:.1f}%')
+                b.metric("Log loss",f'{bt["logloss"]:.3f}')
+                c.metric("Brier score",f'{bt["brier"]:.3f}')
+                st.caption(f'Trained on {bt["train_n"]:,} earlier matches • Tested on {bt["test_n"]:,} later unseen matches')
+                bands=bt["bands"].copy()
+                bands["Grade"]=bands["Calibration gap pp"].apply(calibration_grade)
+                st.dataframe(bands,hide_index=True,use_container_width=True)
+                strong=bands[(bands["Predictions"]>=25)&(bands["Calibration gap pp"].abs()<=5)]
+                if len(strong): st.success("At least one confidence band has a usable sample and calibration within ±5pp.")
+                else: st.warning("No confidence band yet combines a strong sample with tight calibration. Do not loosen BET rules from this result.")
+            except Exception as e:
+                st.error(f"Backtest could not complete: {e}")
+
+
 st.subheader("🔐 Live data connection")
 entered=st.text_input("The Odds API key",value=st.session_state.get("odds_key",""),
                       type="password",placeholder="Paste free The Odds API key",
@@ -356,7 +410,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V10 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V11 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -453,7 +507,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
 
-    # V10 dashboard summary
+    # V11 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
@@ -534,13 +588,13 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V10 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V11 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
-<div class="v10-nav">
+<div class="v11-nav">
  <span class="active">🏠<br>Matches</span>
  <span>📊<br>Analysis</span>
- <span>📈<br>Stats</span>
+ <span>🧪<br>Validation</span>
  <span>⚙️<br>Settings</span>
 </div>
 """, unsafe_allow_html=True)
