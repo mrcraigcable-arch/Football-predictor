@@ -7,7 +7,7 @@ from datetime import date
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-st.set_page_config(page_title="Craig's Football Predictor V8", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V9", page_icon="📈", layout="wide")
 
 st.markdown("""
 <style>
@@ -39,7 +39,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V8</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V9</span></div>
   <div class="brand-sub">Data. Discipline. Better decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -59,7 +59,7 @@ LEAGUES={
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV8/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV9/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -214,15 +214,20 @@ with c2:
     if st.button("Clear odds key",use_container_width=True):
         st.session_state.pop("odds_key",None); st.rerun()
 
+st.subheader("⚙️ Model parameters")
+st.caption("Tap the number boxes to change them. No sliders, so scrolling cannot accidentally alter your rules.")
+pc1,pc2=st.columns(2)
+with pc1:
+    min_conf=st.number_input("Minimum confidence (%)",min_value=45,max_value=90,value=62,step=1)
+    min_edge=st.number_input("Minimum market edge (pp)",min_value=0,max_value=20,value=4,step=1)
+    min_books=st.number_input("Minimum bookmakers",min_value=3,max_value=25,value=8,step=1)
+with pc2:
+    max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
+    topn=st.number_input("Show top predictions",min_value=3,max_value=20,value=10,step=1)
+    day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
-day=st.date_input("Match date",date.today())
-min_conf=st.slider("Minimum prediction confidence (%)",45,90,62)
-min_edge=st.slider("Minimum market edge (percentage points)",0,20,4)
-max_edge=st.slider("Maximum automatic edge before manual verification (pp)",8,30,15)
-min_books=st.slider("Minimum bookmakers required",3,25,8)
-topn=st.slider("Show top predictions",3,20,10)
 
-st.info("V8 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V9 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -290,7 +295,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     edge=conf-mprob
                     ev=conf*odd-1
                 if not market:
-                    decision="PREDICTION ONLY" if conf>=min_conf/100 else "PASS"
+                    # No market data means there is not enough evidence to make a betting
+                    # decision at all. Keep this blue regardless of model confidence.
+                    decision="PREDICTION ONLY"
                 elif books < min_books:
                     decision="VERIFY"
                 elif edge > max_edge/100:
@@ -317,19 +324,18 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
 
-    # V8 dashboard summary
+    # V9 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
     pred_count=int((d.Decision=="PREDICTION ONLY").sum())
     st.subheader("📊 Analysis overview")
-    m1,m2,m3,m4=st.columns(4)
+    m1,m2,m3,m4,m5=st.columns(5)
     m1.metric("🎯 Analysed",len(d))
-    m2.metric("✅ BET",bet_count)
-    m3.metric("🔎 Verify",verify_count)
-    m4.metric("⛔ Pass",pass_count)
-    if pred_count:
-        st.caption(f"🔵 {pred_count} prediction-only match(es) have no matched current market odds.")
+    m2.metric("🟢 BET",bet_count)
+    m3.metric("🟠 Verify",verify_count)
+    m4.metric("🔵 Prediction",pred_count)
+    m5.metric("🔴 Pass",pass_count)
 
     if odds_key:
         with st.expander("🧪 Data diagnostics"):
@@ -376,7 +382,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             elif r["Decision"]=="BET":
                 st.success("Clears the current confidence, market-edge, bookmaker-count and positive-EV rules.")
             elif pd.isna(r["Market odds"]):
-                st.warning("No matched current odds. Prediction only.")
+                st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
 
     if len(bets):
         for _,r in bets.iterrows():
@@ -399,4 +405,4 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V8 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V9 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
