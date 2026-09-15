@@ -816,7 +816,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15.4.2 API-response diagnostics engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15.4.3 API-response diagnostics engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -828,14 +828,15 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         for lname,meta in selected.items():
             code=meta["of"]
             odds_events=[]
+            api_diag={}  # reset per league; never reuse diagnostics from a previous league
             if odds_key:
                 try:
-                    odds_events,oddiag=odds_fetch(odds_key,meta["odds"])
-                    quota_remaining=oddiag.get("remaining")
+                    odds_events,api_diag=odds_fetch(odds_key,meta["odds"])
+                    quota_remaining=api_diag.get("remaining")
                     diagnostics.append({"League":lname,"Sport key":meta["odds"],
-                                        "API events returned":oddiag.get("events",0),
-                                        "Credits used":oddiag.get("used"),
-                                        "Credits remaining":oddiag.get("remaining"),
+                                        "API events returned":api_diag.get("events",0),
+                                        "Credits used":api_diag.get("used"),
+                                        "Credits remaining":api_diag.get("remaining"),
                                         "Status":"OK"})
                     # Record the actual event names/times returned so matching failures are visible.
                     for ev in odds_events[:20]:
@@ -871,9 +872,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
                 i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
-                market,matchdiag=consensus_for(odds_events,h,a,day) if odds_events else (None,{"stage":"no-events","reason":"Odds endpoint returned zero current/live events for this league","trace":[],"rejected_books":[],"api": (oddiag if odds_key and 'oddiag' in locals() else {})})
+                market,matchdiag=consensus_for(odds_events,h,a,day) if odds_events else (None,{"stage":"no-events","reason":"Odds endpoint returned zero current/live events for this league","trace":[],"rejected_books":[],"api": api_diag})
                 if isinstance(matchdiag,dict) and odds_key:
-                    matchdiag.setdefault("api", odddiag if 'oddiag' in locals() else {})
+                    matchdiag.setdefault("api", api_diag)
                 if odds_key:
                     diagnostics.append({"League":lname,"Sport key":meta["odds"],
                                         "API events returned":"","Credits used":"",
