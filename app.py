@@ -8,7 +8,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V16", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V16.1", page_icon="📈", layout="wide")
 
 
 
@@ -132,7 +132,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V16</span>
+ <span class="v14-chip">V16.1</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -169,11 +169,56 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V16</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V16.1</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
 <div class="hero-sub">Historical modelling + current bookmaker consensus + fail-closed verification.</div></div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* V16.1 FINISH — presentation-only layer. Prediction and validation logic unchanged. */
+:root{--vbg:#030912;--vpanel:#081522;--vpanel2:#0b1d2d;--vline:#16354b;--vgreen:#20e884;--vblue:#22a8ff;--vmuted:#8ea4b8}
+.stApp{background:radial-gradient(700px 330px at 50% -100px,rgba(32,232,132,.16),transparent 58%),linear-gradient(180deg,#06131f 0%,#020811 72%)!important}
+.block-container{max-width:860px!important;padding-top:.55rem!important;padding-bottom:6.5rem!important}
+[data-testid="stHeader"]{background:rgba(3,9,18,.70)!important;backdrop-filter:blur(16px)}
+.v14-brand{position:relative;overflow:hidden;border:1px solid rgba(32,232,132,.38)!important;border-radius:24px!important;padding:18px 19px!important;background:linear-gradient(135deg,rgba(11,40,47,.96),rgba(5,18,30,.98))!important;box-shadow:0 16px 45px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.04)!important}
+.v14-brand:after{content:"";position:absolute;width:170px;height:170px;border-radius:50%;right:-70px;top:-95px;background:rgba(32,232,132,.10);filter:blur(4px)}
+.v14-chip,.vbadge{border:1px solid rgba(32,232,132,.55)!important;background:rgba(9,52,39,.72)!important;color:#50f3a5!important}
+.hero{display:none!important}
+.v14-title,.brand-name{font-weight:900!important}.v14-sub,.brand-sub{color:#91a8bc!important}
+/* compact polished controls */
+div[data-baseweb="select"]>div,[data-testid="stDateInput"] input,[data-testid="stNumberInput"] input{background:#0a1826!important;border-color:#1c3b52!important}
+.stButton>button{min-height:58px!important;border-radius:18px!important;font-weight:900!important;letter-spacing:.01em!important;box-shadow:0 10px 30px rgba(32,232,132,.16)!important}
+/* metric tiles become compact dashboard cells */
+div[data-testid="stMetric"]{min-height:92px!important;padding:12px 14px!important;border:1px solid #153d59!important;border-radius:18px!important;background:linear-gradient(145deg,#0a2134,#061521)!important;box-shadow:none!important}
+div[data-testid="stMetricLabel"] p{font-size:.82rem!important;color:#8fa8bd!important}
+div[data-testid="stMetricValue"]{font-size:1.65rem!important;line-height:1.1!important}
+/* match cards */
+div[data-testid="stExpander"]{border:1px solid #1b3c53!important;border-radius:20px!important;background:linear-gradient(145deg,#0a1927,#06111c)!important;box-shadow:0 12px 30px rgba(0,0,0,.18)!important;margin-bottom:12px!important}
+div[data-testid="stExpander"] details summary{min-height:72px!important;padding:.6rem .8rem!important}
+div[data-testid="stExpander"] details summary p{font-weight:800!important;line-height:1.45!important}
+[data-testid="stAlert"]{border-radius:18px!important;padding:14px 16px!important}
+[data-testid="stDataFrame"]{border:1px solid #17384f!important;border-radius:18px!important;background:#071521!important}
+/* section headings */
+h2{font-size:1.55rem!important;margin-top:1.25rem!important;margin-bottom:.65rem!important}h3{font-size:1.18rem!important}
+hr{border-color:#173247!important}
+/* download */
+[data-testid="stDownloadButton"] button{min-height:52px!important;border-radius:16px!important;background:#0a1927!important;border:1px solid #27475d!important;color:#e9f4fc!important}
+/* mobile: two-column dashboard instead of giant one-column tiles */
+@media(max-width:699px){
+ .block-container{padding-left:.72rem!important;padding-right:.72rem!important}
+ .v14-brand{margin-top:0!important}.v14-title{font-size:1.28rem!important}.v14-logo{font-size:1.65rem!important}
+ div[data-testid="stHorizontalBlock"]{gap:.48rem!important;flex-wrap:wrap!important}
+ div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:calc(50% - .3rem)!important;flex:1 1 calc(50% - .3rem)!important}
+ div[data-testid="stMetric"]{min-height:84px!important;padding:10px 12px!important}
+ div[data-testid="stMetricValue"]{font-size:1.48rem!important}
+ div[data-testid="stMetricLabel"] p{font-size:.76rem!important}
+ div[data-testid="stExpander"] details summary{min-height:68px!important}
+ h2{font-size:1.42rem!important}
+}
+</style>
 """, unsafe_allow_html=True)
 
 RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
@@ -901,9 +946,9 @@ def _settle_ledger():
 
 def _tracker_panel():
     _ensure_ledger(); _settle_ledger(); led=st.session_state.v16_ledger
-    st.subheader("🧾 V16 Live Validation Tracker")
+    st.subheader("📈 Live performance")
     st.caption("Signals are frozen at first BET classification. Re-running before kickoff updates only the latest-price snapshot. The ledger lives in this Streamlit session, so export it to keep a durable copy.")
-    uploaded=st.file_uploader("Restore a previously exported V16 ledger",type=["csv"],key="v16_ledger_upload")
+    uploaded=st.file_uploader("Restore validation history",type=["csv"],key="v16_ledger_upload")
     if uploaded is not None and st.button("RESTORE LEDGER",use_container_width=True,key="restore_v16"):
         try:
             imp=pd.read_csv(uploaded); missing=[c for c in LEDGER_COLUMNS if c not in imp.columns]
@@ -935,11 +980,11 @@ def _tracker_panel():
                 gp=pd.to_numeric(g["Profit units"],errors="coerce").sum(); n=len(g); w=int((g["Won"]==True).sum())
                 perf.append({"League":lg,"Bets":n,"Wins":w,"Strike %":round(w/n*100,1),"Profit units":round(gp,2),"ROI %":round(gp/n*100,1)})
             st.dataframe(pd.DataFrame(perf).sort_values("Bets",ascending=False),use_container_width=True,hide_index=True)
-    st.download_button("⬇️ EXPORT V16 LEDGER CSV",data=led.to_csv(index=False).encode("utf-8"),file_name="football_predictor_v16_live_ledger.csv",mime="text/csv",use_container_width=True)
+    st.download_button("⬇️ EXPORT VALIDATION LEDGER",data=led.to_csv(index=False).encode("utf-8"),file_name="football_predictor_v16_live_ledger.csv",mime="text/csv",use_container_width=True)
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V16 LIVE VALIDATION: qualifying BET signals are timestamped into the validation ledger. Results settle from the fixture feed; price movement/CLV is only labelled verified when a near-kickoff snapshot exists.")
+st.info("V16.1 • LIVE VALIDATION — BET signals are frozen at first classification; later checks update price movement without rewriting the original signal.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1088,7 +1133,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
     pred_count=int((d.Decision=="PREDICTION ONLY").sum())
-    st.subheader("📊 Analysis overview")
+    st.subheader("📊 Match dashboard")
     m1,m2,m3,m4,m5=st.columns(5)
     m1.metric("🎯 Analysed",len(d))
     m2.metric("🟢 BET",bet_count)
@@ -1104,7 +1149,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             else:
                 st.warning("No odds diagnostics were produced.")
 
-    st.subheader("💚 Strongest qualifying selections")
+    st.subheader("💚 Best qualifying bets")
     bets=d[d.Decision=="BET"].sort_values(["Edge pp","Confidence %"],ascending=False).head(topn)
     if len(bets):
         st.success(f"{len(bets)} selection(s) clear every automatic rule.")
@@ -1113,7 +1158,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     else:
         st.info("Prediction-only mode: connect current odds before any BET decision.")
 
-    st.markdown("**Decision key:** 🟢 BET &nbsp;&nbsp; 🟠 VERIFY &nbsp;&nbsp; 🔴 PASS &nbsp;&nbsp; 🔵 PREDICTION ONLY", unsafe_allow_html=True)
+    st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 BET &nbsp; 🟠 VERIFY &nbsp; 🔴 PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
 
     def fmt(v,suffix=""):
         if pd.isna(v): return "—"
