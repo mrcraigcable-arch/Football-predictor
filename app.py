@@ -1239,7 +1239,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     m1.metric("🎯 Analysed",len(d))
     m2.metric("🟢 BET",bet_count)
     m3.metric("🟠 Verify",verify_count)
-    m4.metric("🔵 Prediction",pred_count)
+    m4.metric("🔵 No odds",pred_count)
     m5.metric("🔴 Pass",pass_count)
 
     if odds_key:
@@ -1268,7 +1268,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     st.subheader("🏁 Ranked match board")
     st.caption("🟢 is reserved for verified value bets. ⭐ strong-win chances are high-probability predictions and remain separate from betting value.")
 
-    st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 VALUE BET &nbsp; ⭐ STRONG WIN CHANCE &nbsp; 🟠 VALUE WATCH &nbsp; 🔴 AVOID/PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
+    st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 VALUE BET &nbsp; ⭐ STRONG PICK — ODDS NOT VERIFIED &nbsp; 🟠 VALUE WATCH &nbsp; 🔴 AVOID/PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
     st.caption("🇬🇧 Odds are displayed as UK fractions. Decimal odds remain under the hood for probability, edge, EV and validation calculations.")
 
     def decimal_to_fractional(v, max_denominator=100):
@@ -1325,10 +1325,12 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         return g.sort_values(["_rank_score","Confidence %"],ascending=[False,False]).reset_index(drop=True)
 
     def match_card(r, expanded=False, rank=None):
-        icon={"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
-        rank_label=f"#{rank} {r['Decision']} • " if rank is not None else ""
+        strong_no_odds = r["Decision"] == "PREDICTION ONLY" and float(r.get("Confidence %",0) or 0) >= 68.0
+        icon = "⭐" if strong_no_odds else {"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
+        display_decision = "STRONG PICK — ODDS NOT VERIFIED" if strong_no_odds else r["Decision"]
+        rank_label=f"#{rank} {display_decision} • " if rank is not None else ""
         with st.expander(f'{icon} {rank_label}{r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}% • ⏰ {r.get("Kickoff UK","time unavailable")}', expanded=expanded):
-            st.caption(f'📅 {r.get("Kickoff UK","time unavailable")}  •  {r["League"]}  •  Decision: {r["Decision"]}')
+            st.caption(f'📅 {r.get("Kickoff UK","time unavailable")}  •  {r["League"]}  •  Decision: {display_decision}')
             st.markdown(f'**🧠 {r["Model engine"]}**  ·  Validation: **{r["Validation"]}**')
             st.caption(r["Validation evidence"])
             c1,c2,c3=st.columns(3)
@@ -1413,7 +1415,10 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 with st.expander("🤖 Secondary auto-verification audit", expanded=False):
                     for _check in r.get("Secondary checks",[]): st.write("✓ "+str(_check))
             elif pd.isna(r["Market odds"]):
-                st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
+                if strong_no_odds:
+                    st.info(f'⭐ STRONG PICK — ODDS NOT VERIFIED — the model gives {r["Pick"]} a {r["Confidence %"]:.0f}% win chance, but no trusted current 1X2 market was matched. This is a strong prediction, not a verified value bet.')
+                else:
+                    st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
 
             md = r.get("Market diagnostic")
             if isinstance(md, dict) and (pd.isna(r.get("Market odds")) or md.get("stage") != "accepted"):
@@ -1457,7 +1462,6 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         ("BET","🟢 VALUE BET — strongest to weakest","Clears every automatic betting rule. Ranked by value signal, confidence and market depth.",True),
         ("VERIFY","🟠 VALUE WATCH — strongest to weakest","Potential value, but at least one safety check prevents a green value-bet classification.",False),
         ("PASS","🔴 AVOID / PASS — closest to qualifying to weakest","Does not clear the value-bet gates. Ranked only to show which came closest.",False),
-        ("PREDICTION ONLY","🔵 PREDICTION ONLY — strongest to weakest","No trusted current market decision. Ranked only by model confidence.",False),
     ]
     for decision,title,help_text,open_default in groups:
         g=ranked_group(decision)
@@ -1467,6 +1471,22 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             st.caption(help_text)
             for idx,(_,r) in enumerate(g.iterrows(),start=1):
                 match_card(r, expanded=(decision=="BET" and idx==1), rank=idx)
+
+    # Split no-market predictions so strong predicted winners are not visually buried.
+    pred_all=ranked_group("PREDICTION ONLY")
+    if not pred_all.empty:
+        strong_pred=pred_all[pred_all["Confidence %"] >= 68.0].reset_index(drop=True)
+        normal_pred=pred_all[pred_all["Confidence %"] < 68.0].reset_index(drop=True)
+        if not strong_pred.empty:
+            with st.expander(f"⭐ STRONG PICKS — ODDS NOT VERIFIED  ({len(strong_pred)})", expanded=True):
+                st.caption("High model win probability, but the app could not verify a trusted current 1X2 price. Strong prediction ≠ verified value bet.")
+                for idx,(_,r) in enumerate(strong_pred.iterrows(),start=1):
+                    match_card(r, expanded=(idx==1), rank=idx)
+        if not normal_pred.empty:
+            with st.expander(f"🔵 PREDICTION ONLY — strongest to weakest  ({len(normal_pred)})", expanded=False):
+                st.caption("No trusted current market decision. Ranked only by model confidence.")
+                for idx,(_,r) in enumerate(normal_pred.iterrows(),start=1):
+                    match_card(r, expanded=False, rank=idx)
 
     st.divider()
     _tracker_panel()
