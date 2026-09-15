@@ -7,7 +7,136 @@ from datetime import date
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-st.set_page_config(page_title="Craig's Football Predictor V9", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V10", page_icon="📈", layout="wide")
+
+
+
+# --- V10 VISUAL SYSTEM: mobile-first neon dashboard ---
+st.markdown("""
+<style>
+:root{
+ --bg:#03111d; --panel:#071b2b; --panel2:#0a2235; --line:#173e58;
+ --cyan:#18a9ff; --green:#00ef83; --amber:#ffab00; --red:#ff334f;
+ --text:#f4f8fc; --muted:#9db0c4;
+}
+.stApp{
+ background:
+ radial-gradient(900px 380px at 55% -120px, rgba(0,239,131,.17), transparent 55%),
+ linear-gradient(180deg,#041522 0%,#020b13 100%);
+ color:var(--text);
+}
+.block-container{max-width:980px;padding-top:.65rem;padding-bottom:6rem}
+h1,h2,h3{letter-spacing:-.025em}
+h1{font-weight:850}
+h2,h3{color:#f8fbff}
+[data-testid="stHeader"]{background:rgba(2,11,19,.78)}
+[data-testid="stToolbar"]{right:.5rem}
+
+/* Main section containers */
+div[data-testid="stVerticalBlockBorderWrapper"]{
+ border:1px solid var(--line)!important;border-radius:20px!important;
+ background:linear-gradient(145deg,rgba(9,31,48,.96),rgba(4,17,29,.96))!important;
+ box-shadow:0 8px 28px rgba(0,0,0,.22);
+}
+div[data-testid="stExpander"]{
+ border:1px solid #23455e!important;border-radius:17px!important;
+ background:linear-gradient(145deg,#091a29,#06121e)!important;
+ overflow:hidden;
+}
+div[data-testid="stExpander"] details summary{
+ min-height:64px;padding:.45rem .7rem;font-weight:700
+}
+
+/* Inputs: touch-safe and compact */
+div[data-testid="stNumberInput"] input,
+div[data-testid="stDateInput"] input,
+div[data-baseweb="select"]>div{
+ background:#101f30!important;border:1px solid #244c67!important;
+ border-radius:12px!important;color:#fff!important;
+}
+div[data-testid="stNumberInput"] button{
+ background:#12334b!important;color:#fff!important;border-color:#285b7a!important;
+ min-width:44px!important;min-height:44px!important
+}
+div[data-testid="stNumberInput"] button:hover{border-color:var(--green)!important}
+label[data-testid="stWidgetLabel"] p{font-weight:650;color:#dce8f3}
+
+/* Buttons */
+.stButton>button{
+ width:100%;min-height:52px;border-radius:13px;border:1px solid #0af08b;
+ background:linear-gradient(90deg,#00d97c,#00f29a);
+ color:#00170d;font-weight:850;font-size:1.05rem;
+ box-shadow:0 0 22px rgba(0,239,131,.20);
+}
+.stButton>button:hover{border-color:#64ffc0;color:#00170d;filter:brightness(1.05)}
+
+/* Metrics */
+div[data-testid="stMetric"]{
+ background:linear-gradient(145deg,#092239,#061726);
+ border:1px solid #17679a;border-radius:16px;padding:14px 15px;
+ min-height:112px;
+}
+div[data-testid="stMetricLabel"]{color:var(--muted)}
+div[data-testid="stMetricValue"]{font-weight:850}
+
+/* Status messages */
+div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
+
+/* Tables */
+[data-testid="stDataFrame"]{border-radius:16px;overflow:hidden;border:1px solid var(--line)}
+
+/* visual badges reusable from markdown */
+.v10-brand{
+ border:1px solid #0b8057;border-radius:18px;padding:16px 18px;margin:4px 0 16px;
+ background:linear-gradient(135deg,rgba(0,239,131,.12),rgba(5,29,46,.92) 45%,rgba(10,67,95,.35));
+ box-shadow:0 8px 30px rgba(0,0,0,.20)
+}
+.v10-brandline{display:flex;align-items:center;gap:12px}
+.v10-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
+.v10-title{font-size:1.55rem;font-weight:900;line-height:1.05}
+.v10-title b{color:var(--green)}
+.v10-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
+.v10-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
+ padding:5px 11px;color:#00f18a;font-weight:900;background:#06251b}
+.v10-section{
+ margin:18px 0 10px;padding:10px 13px;border-left:4px solid var(--cyan);
+ background:linear-gradient(90deg,rgba(20,158,255,.13),transparent);
+ border-radius:10px;font-weight:850;font-size:1.22rem
+}
+.v10-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
+ margin:8px 0 16px;color:#d9e7f3}
+.green{color:var(--green)} .amber{color:var(--amber)} .red{color:var(--red)} .blue{color:#2b9cff}
+
+/* Desktop parameter row; mobile stays comfortable */
+@media(min-width:700px){
+ div[data-testid="stHorizontalBlock"]{gap:.75rem}
+}
+@media(max-width:699px){
+ .block-container{padding-left:.85rem;padding-right:.85rem}
+ .v10-title{font-size:1.35rem}
+ h1{font-size:2rem}
+ h2{font-size:1.65rem}
+ div[data-testid="stMetric"]{min-height:96px}
+}
+
+/* bottom visual nav */
+.v10-nav{
+ position:fixed;left:0;right:0;bottom:0;z-index:999;
+ display:flex;justify-content:space-around;align-items:center;
+ padding:10px 8px calc(10px + env(safe-area-inset-bottom));
+ background:rgba(3,17,29,.96);border-top:1px solid #17425e;
+ backdrop-filter:blur(14px);box-shadow:0 -8px 25px rgba(0,0,0,.30)
+}
+.v10-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
+.v10-nav .active{color:var(--green);font-weight:800}
+</style>
+<div class="v10-brand">
+ <span class="v10-chip">V10</span>
+ <div class="v10-brandline"><span class="v10-logo">📈</span>
+ <div><div class="v10-title">Craig's Football <b>Predictor</b></div>
+ <div class="v10-sub">Data. Discipline. Better decisions. • Real market comparison</div></div></div>
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
@@ -39,7 +168,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V9</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V10</span></div>
   <div class="brand-sub">Data. Discipline. Better decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -59,7 +188,7 @@ LEAGUES={
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV9/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV10/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -227,7 +356,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V9 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V10 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -324,7 +453,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
 
-    # V9 dashboard summary
+    # V10 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
@@ -405,4 +534,13 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V9 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V10 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+
+st.markdown("""
+<div class="v10-nav">
+ <span class="active">🏠<br>Matches</span>
+ <span>📊<br>Analysis</span>
+ <span>📈<br>Stats</span>
+ <span>⚙️<br>Settings</span>
+</div>
+""", unsafe_allow_html=True)
