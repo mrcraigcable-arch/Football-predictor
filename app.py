@@ -796,7 +796,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15.2 diagnostic market-integrity engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15.3 visible market-diagnostics engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -898,6 +898,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Best market odds":round(best_odd,2) if market and np.isfinite(best_odd) else None,
                             "Market integrity":market.get("integrity") if market else None,
                             "Bookmaker detail":market.get("detail",[]) if market else [],
+                            "Market diagnostic":matchdiag,
                             "Decision":decision,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence})
@@ -976,6 +977,32 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             elif pd.isna(r["Market odds"]):
                 st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
 
+            # Always expose fixture-level market diagnostics when a market was not accepted.
+            md = r.get("Market diagnostic")
+            if isinstance(md, dict) and (pd.isna(r.get("Market odds")) or md.get("stage") != "accepted"):
+                st.markdown("### 🧪 Market Match Diagnostic")
+                st.write(f'**Fixture requested:** {r["Match"]}')
+                st.write(f'**Final stage:** {md.get("stage", "unknown")}')
+                st.write(f'**Final rejection reason:** {md.get("reason", "No reason recorded")}')
+                trace = md.get("trace", []) or []
+                st.write(f'**Odds API candidates inspected:** {len(trace)}')
+                if trace:
+                    rows=[]
+                    for t in trace:
+                        rows.append({
+                            "Odds API event": t.get("API event", ""),
+                            "Kickoff": t.get("API time", ""),
+                            "Home match": "PASS" if t.get("Home match") else "FAIL",
+                            "Away match": "PASS" if t.get("Away match") else "FAIL",
+                            "Date match": "PASS" if t.get("Date match") else "FAIL",
+                        })
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                rejected = md.get("rejected_books", []) or []
+                if rejected:
+                    st.write(f'**Bookmakers rejected after fixture match:** {len(rejected)}')
+                    st.dataframe(pd.DataFrame(rejected), use_container_width=True, hide_index=True)
+                st.caption("Fail-closed: this fixture cannot become BET until a unique event and valid named Home/Draw/Away h2h prices pass every integrity check.")
+
     if len(bets):
         for _,r in bets.iterrows():
             match_card(r, expanded=True)
@@ -997,7 +1024,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V15.2 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V15.3 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
 <div class="v14-nav">
