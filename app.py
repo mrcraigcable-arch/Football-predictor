@@ -9,7 +9,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V16.3", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V16.4", page_icon="📈", layout="wide")
 
 
 
@@ -509,6 +509,53 @@ def consensus_for(events,home,away,fixture_date=None):
             "integrity":integrity,"detail":detail,"event":event,"rejected":rejected}
     return market,{"stage":"accepted","reason":f"Matched event; {len(valid)} valid bookmaker(s), {len(rejected)} rejected",
                    "trace":trace,"rejected_books":rejected}
+
+
+def secondary_auto_verify(market, pick_idx, conf, min_edge_pp, validation_status, matchdiag, kickoff_iso):
+    """Fail-closed secondary audit for candidates that would previously need manual verification.
+    Uses only independently observed bookmaker rows already accepted by the 1X2 parser.
+    It never invents team-news/injury evidence.
+    """
+    checks=[]
+    if validation_status == "RAW FALLBACK":
+        return "PASS", "Secondary audit stopped: this league uses RAW FALLBACK because calibrated validation is unavailable.", checks
+    if not market or matchdiag.get("stage") != "accepted" or not kickoff_iso:
+        return "PASS", "Secondary audit failed fixture/market/kickoff identity checks.", checks
+    detail=market.get("detail",[])
+    if len(detail) < 8:
+        return "PASS", f"Secondary audit failed bookmaker depth ({len(detail)} valid books).", checks
+    col=("Home","Draw","Away")[pick_idx]
+    prices=np.array([float(x[col]) for x in detail if isinstance(x.get(col),(int,float))],dtype=float)
+    if len(prices)<8:
+        return "PASS", "Secondary audit could not reconstruct enough independent prices.", checks
+    # Robust price agreement: compare the middle 50% and remove dependence on the single best quote.
+    q25,q50,q75=np.percentile(prices,[25,50,75])
+    rel_iqr=(q75-q25)/max(q50,1e-9)
+    checks.append(f"{len(prices)} accepted bookmakers; selected-price IQR {rel_iqr*100:.1f}%")
+    if rel_iqr > .20:
+        return "PASS", "Secondary audit rejected the signal because bookmaker prices are too dispersed.", checks
+    # Rebuild each bookmaker's de-margined probability for the selected outcome.
+    fairs=[]
+    for x in detail:
+        ps=np.array([x.get("Home"),x.get("Draw"),x.get("Away")],dtype=float)
+        if np.all(np.isfinite(ps)) and np.all(ps>1.01):
+            inv=1/ps; fairs.append(float((inv/inv.sum())[pick_idx]))
+    if len(fairs)<8:
+        return "PASS", "Secondary audit could not reconstruct bookmaker fair probabilities.", checks
+    # Use the 75th percentile market probability: a deliberately tougher market comparison than the median.
+    tough_market=float(np.percentile(fairs,75))
+    robust_edge=conf-tough_market
+    median_ev=conf*q50-1
+    checks.append(f"Robust edge vs 75th-percentile market: {robust_edge*100:.1f}pp")
+    checks.append(f"EV at median bookmaker price (not best price): {median_ev*100:.1f}%")
+    rejected=len(market.get("rejected",[])); total=len(detail)+rejected
+    reject_rate=(rejected/total) if total else 1
+    checks.append(f"Bookmaker rejection rate: {reject_rate*100:.1f}%")
+    if reject_rate > .35:
+        return "PASS", "Secondary audit rejected the signal because too many bookmaker markets failed integrity checks.", checks
+    if robust_edge < min_edge_pp/100 or median_ev <= 0:
+        return "PASS", "Secondary audit removed the apparent value when tested against tougher consensus assumptions.", checks
+    return "BET", "SECONDARY AUTO VERIFIED — the value survives a tougher bookmaker-consensus audit without relying on the best quote.", checks
 
 
 @st.cache_data(ttl=3600,show_spinner=False)
@@ -1070,8 +1117,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     odd=float(med[i]); best_odd=float(market["best"][i]); mprob=float(mfair[i])
                     edge=conf-mprob
                     ev=conf*best_odd-1
-                # V15.5 decision hierarchy: first establish whether this is even a
-                # positive betting candidate. VERIFY is reserved for otherwise-qualifying
+                secondary_checks=[]
+                # V16.4 decision hierarchy: establish whether this is a positive betting candidate,
+                # then automatically investigate unusually large edges instead of handing work to the user. VERIFY is reserved for otherwise-qualifying
                 # candidates whose market evidence needs manual checking.
                 if not market:
                     decision="PREDICTION ONLY"
@@ -1092,8 +1140,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     decision="VERIFY"
                     decision_reason=f"Positive candidate, but only {books} bookmakers passed validation (minimum {min_books})."
                 elif edge > max_edge/100:
-                    decision="VERIFY"
-                    decision_reason=f"Positive candidate, but the {edge*100:.1f}pp edge exceeds the {max_edge:.0f}pp manual-verification ceiling."
+                    decision, decision_reason, secondary_checks = secondary_auto_verify(
+                        market, i, conf, min_edge, validation_status, matchdiag, kickoff_iso
+                    )
                 elif not kickoff_iso:
                     decision="VERIFY"
                     decision_reason="Positive candidate, but the matched market has no verified kickoff timestamp."
@@ -1119,7 +1168,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Kickoff ISO":kickoff_iso,"Kickoff UK":kickoff_label,
                             "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
-                            "Validation evidence":validation_evidence})
+                            "Validation evidence":validation_evidence,"Secondary checks":secondary_checks})
     if warnings:
         with st.expander("Data/model warnings"):
             for w in warnings: st.warning(w)
@@ -1240,6 +1289,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 st.success(f'🟢 BET — {r.get("Decision reason", "Clears all current betting rules.")}')
             elif r["Decision"]=="PASS":
                 st.error(f'🔴 PASS — {r.get("Decision reason", "Does not clear the betting rules.")}')
+            if r.get("Secondary checks"):
+                with st.expander("🤖 Secondary auto-verification audit", expanded=False):
+                    for _check in r.get("Secondary checks",[]): st.write("✓ "+str(_check))
             elif pd.isna(r["Market odds"]):
                 st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
 
@@ -1305,7 +1357,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V16.3 ranked-board rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V16.4 auto-verification rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
 st.markdown("""
 <div class="v14-nav">
