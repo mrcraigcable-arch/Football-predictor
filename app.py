@@ -7,8 +7,8 @@ from datetime import date
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-st.set_page_config(page_title="Football Predictor V6", page_icon="⚽", layout="wide")
-st.title("⚽ Football Predictor V6")
+st.set_page_config(page_title="Football Predictor V6.1 Diagnostics", page_icon="⚽", layout="wide")
+st.title("⚽ Football Predictor V6.1 Diagnostics")
 st.caption("Raw-GitHub fixtures + historical model + current UK bookmaker consensus odds. Market edge and EV are only calculated from verified 1X2 prices.")
 
 RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
@@ -131,7 +131,13 @@ def odds_fetch(api_key,sport_key):
     if r.status_code==429:
         raise RuntimeError("Odds API monthly request allowance has been reached.")
     r.raise_for_status()
-    return r.json(), r.headers.get("x-requests-remaining"), r.headers.get("x-requests-used")
+    data=r.json()
+    return data, {
+        "remaining":r.headers.get("x-requests-remaining"),
+        "used":r.headers.get("x-requests-used"),
+        "last":r.headers.get("x-requests-last"),
+        "events":len(data) if isinstance(data,list) else 0
+    }
 
 def consensus_for(events,home,away):
     event=None
@@ -185,6 +191,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
     odds_key=st.session_state.get("odds_key","").strip()
     quota_remaining=None
+    diagnostics=[]
     out=[]; warnings=[]
     with st.spinner("Loading verified fixtures and training league models..."):
         for lname,meta in selected.items():
@@ -192,10 +199,24 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
             odds_events=[]
             if odds_key:
                 try:
-                    odds_events,rem,used=odds_fetch(odds_key,meta["odds"])
-                    if rem is not None: quota_remaining=rem
+                    odds_events,oddiag=odds_fetch(odds_key,meta["odds"])
+                    quota_remaining=oddiag.get("remaining")
+                    diagnostics.append({"League":lname,"Sport key":meta["odds"],
+                                        "API events returned":oddiag.get("events",0),
+                                        "Credits used":oddiag.get("used"),
+                                        "Credits remaining":oddiag.get("remaining"),
+                                        "Status":"OK"})
+                    # Record the actual event names/times returned so matching failures are visible.
+                    for ev in odds_events[:20]:
+                        diagnostics.append({"League":lname,"Sport key":meta["odds"],
+                                            "API events returned":"",
+                                            "Credits used":"","Credits remaining":"",
+                                            "Status":f'ODDS EVENT: {ev.get("home_team","?")} v {ev.get("away_team","?")} @ {ev.get("commence_time","?")}'})
                 except Exception as e:
                     warnings.append(f"{lname}: current odds unavailable ({e})")
+                    diagnostics.append({"League":lname,"Sport key":meta["odds"],
+                                        "API events returned":0,"Credits used":"",
+                                        "Credits remaining":"","Status":f"ERROR: {e}"})
             try:
                 matches=fixtures_for(code)
             except Exception as e:
@@ -220,6 +241,11 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
                 pr=model.predict_proba(x)[0]
                 i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
                 market=consensus_for(odds_events,h,a) if odds_events else None
+                if odds_key:
+                    diagnostics.append({"League":lname,"Sport key":meta["odds"],
+                                        "API events returned":"","Credits used":"",
+                                        "Credits remaining":"",
+                                        "Status":f'FIXTURE MATCH {"YES" if market else "NO"}: {h} v {a}'})
                 odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
                 if market:
                     med,mfair,books=market
@@ -249,6 +275,13 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
         st.info("No supported OpenFootball fixtures were found for that date.")
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
+    if odds_key:
+        st.subheader("🧪 Odds diagnostics")
+        st.caption("This panel shows exactly what The Odds API returned and whether each OpenFootball fixture matched it. It is safe to screenshot: the API key is never displayed.")
+        if diagnostics:
+            st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
+        else:
+            st.warning("No odds diagnostics were produced.")
     st.subheader("🏆 Strongest qualifying selections")
     bets=d[d.Decision=="BET"].sort_values(["Edge pp","Confidence %"],ascending=False).head(topn)
     if len(bets):
@@ -267,4 +300,4 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V6 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V6.1 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
