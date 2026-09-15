@@ -7,9 +7,44 @@ from datetime import date
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-st.set_page_config(page_title="Football Predictor V7 Mobile", page_icon="⚽", layout="wide")
-st.title("⚽ Football Predictor V7 Mobile")
-st.caption("Raw-GitHub fixtures + historical model + current UK bookmaker consensus odds. Market edge and EV are only calculated from verified 1X2 prices.")
+st.set_page_config(page_title="Craig's Football Predictor V8", page_icon="📈", layout="wide")
+
+st.markdown("""
+<style>
+:root { --green:#22e682; --blue:#35a7ff; --amber:#ffb000; --red:#ff4057; --panel:#111b28; --muted:#94a3b8; }
+.stApp { background: radial-gradient(circle at 75% 0%, #10243a 0%, #07111c 32%, #050b12 72%); color:#f8fafc; }
+.block-container { max-width:920px; padding-top:1.1rem; padding-bottom:4rem; }
+h1,h2,h3 { letter-spacing:-.02em; }
+[data-testid="stMetric"] { background:linear-gradient(145deg,rgba(17,27,40,.98),rgba(8,17,28,.98)); border:1px solid #24364a; border-radius:18px; padding:14px 16px; box-shadow:0 10px 30px rgba(0,0,0,.18); }
+[data-testid="stMetricLabel"] { color:#aab8c8; }
+[data-testid="stMetricValue"] { color:#f8fafc; }
+[data-testid="stExpander"] { background:linear-gradient(145deg,rgba(17,27,40,.96),rgba(8,17,28,.96)); border:1px solid #26384b; border-radius:17px; overflow:hidden; margin-bottom:10px; }
+div.stButton > button { border-radius:14px; min-height:48px; border:1px solid #2b435b; font-weight:750; }
+div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977,#24ec92); color:#04120b; border:0; }
+[data-testid="stAlert"] { border-radius:16px; }
+.hero { padding:20px 22px; border-radius:22px; border:1px solid rgba(34,230,130,.7); background:linear-gradient(110deg,rgba(8,76,60,.7),rgba(7,17,28,.92)); box-shadow:0 0 35px rgba(34,230,130,.08); margin:8px 0 18px; }
+.hero-title { font-size:1.55rem; font-weight:850; }
+.hero-sub { color:#b8c6d6; margin-top:4px; }
+.brand { display:flex; align-items:center; gap:14px; margin-bottom:8px; }
+.brand-icon { font-size:2.3rem; background:#071827; border-radius:16px; padding:8px 12px; }
+.brand-name { font-size:1.65rem; font-weight:900; line-height:1.0; }
+.brand-sub { color:#93a4b8; margin-top:5px; }
+.vbadge { display:inline-block; color:#22e682; border:1px solid #22e682; border-radius:12px; padding:4px 10px; font-weight:850; margin-left:8px; }
+.section-note { color:#94a3b8; margin-top:-8px; margin-bottom:14px; }
+@media (max-width:640px){
+ .block-container { padding-left:1rem; padding-right:1rem; }
+ .brand-name { font-size:1.45rem; }
+ [data-testid="stMetricValue"] { font-size:1.75rem; }
+}
+</style>
+<div class="brand">
+  <div class="brand-icon">📈</div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V8</span></div>
+  <div class="brand-sub">Data. Discipline. Better decisions.</div></div>
+</div>
+<div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
+<div class="hero-sub">Historical modelling + current bookmaker consensus + fail-closed verification.</div></div>
+""", unsafe_allow_html=True)
 
 RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
 LEAGUES={
@@ -24,7 +59,7 @@ LEAGUES={
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV5/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV8/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -164,7 +199,7 @@ def consensus_for(events,home,away):
     inv=1/med; fair=inv/inv.sum()
     return med,fair,len(books)
 
-st.subheader("🔐 Current odds connection")
+st.subheader("🔐 Live data connection")
 entered=st.text_input("The Odds API key",value=st.session_state.get("odds_key",""),
                       type="password",placeholder="Paste free The Odds API key",
                       help="Held in this Streamlit session; it is not written to your GitHub repository.")
@@ -187,9 +222,9 @@ max_edge=st.slider("Maximum automatic edge before manual verification (pp)",8,30
 min_books=st.slider("Minimum bookmakers required",3,25,8)
 topn=st.slider("Show top predictions",3,20,10)
 
-st.info("V7 is mobile-first. BET requires current matched odds, adequate bookmaker coverage, sufficient confidence/edge and positive EV. Extreme model-market disagreements are forced into VERIFY instead of BET.")
+st.info("V8 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
-if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
+if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
     odds_key=st.session_state.get("odds_key","").strip()
     quota_remaining=None
@@ -281,6 +316,21 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
         st.info("No supported OpenFootball fixtures were found for that date.")
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
+
+    # V8 dashboard summary
+    bet_count=int((d.Decision=="BET").sum())
+    verify_count=int((d.Decision=="VERIFY").sum())
+    pass_count=int((d.Decision=="PASS").sum())
+    pred_count=int((d.Decision=="PREDICTION ONLY").sum())
+    st.subheader("📊 Analysis overview")
+    m1,m2,m3,m4=st.columns(4)
+    m1.metric("🎯 Analysed",len(d))
+    m2.metric("✅ BET",bet_count)
+    m3.metric("🔎 Verify",verify_count)
+    m4.metric("⛔ Pass",pass_count)
+    if pred_count:
+        st.caption(f"🔵 {pred_count} prediction-only match(es) have no matched current market odds.")
+
     if odds_key:
         with st.expander("🧪 Data diagnostics"):
             st.caption("Technical feed details. The API key is never displayed.")
@@ -289,7 +339,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
             else:
                 st.warning("No odds diagnostics were produced.")
 
-    st.subheader("🏆 Strongest qualifying selections")
+    st.subheader("💚 Strongest qualifying selections")
     bets=d[d.Decision=="BET"].sort_values(["Edge pp","Confidence %"],ascending=False).head(topn)
     if len(bets):
         st.success(f"{len(bets)} selection(s) clear every automatic rule.")
@@ -298,12 +348,14 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
     else:
         st.info("Prediction-only mode: connect current odds before any BET decision.")
 
+    st.markdown("**Decision key:** 🟢 BET &nbsp;&nbsp; 🟠 VERIFY &nbsp;&nbsp; 🔴 PASS &nbsp;&nbsp; 🔵 PREDICTION ONLY", unsafe_allow_html=True)
+
     def fmt(v,suffix=""):
         if pd.isna(v): return "—"
         return f"{v}{suffix}"
 
     def match_card(r, expanded=False):
-        icon={"BET":"🟢","VERIFY":"🟠","PASS":"⚪","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
+        icon={"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
         with st.expander(f'{icon} {r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}%', expanded=expanded):
             st.caption(f'{r["League"]}  •  Decision: {r["Decision"]}')
             c1,c2,c3=st.columns(3)
@@ -332,12 +384,12 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
 
     verifies=d[d.Decision=="VERIFY"].sort_values("Edge pp",ascending=False)
     if len(verifies):
-        st.subheader("⚠️ Manual verification queue")
+        st.subheader("🟠 Manual verification queue")
         st.caption("Large model/market disagreements are isolated here instead of being treated as automatic value.")
         for _,r in verifies.head(topn).iterrows():
             match_card(r)
 
-    st.subheader("All analysed matches")
+    st.subheader("📋 All analysed matches")
     for _,r in d.head(max(topn,20)).iterrows():
         match_card(r)
 
@@ -347,4 +399,4 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V7 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V8 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
