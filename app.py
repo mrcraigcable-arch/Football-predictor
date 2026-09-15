@@ -3,12 +3,12 @@ import pandas as pd
 import numpy as np
 import requests
 from collections import defaultdict, deque
-from datetime import date
+from datetime import date, datetime, timezone
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V15", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V15.6", page_icon="📈", layout="wide")
 
 
 
@@ -390,6 +390,25 @@ def _event_date_utc(e):
         return pd.to_datetime(e.get("commence_time"),utc=True).date()
     except Exception:
         return None
+
+def kickoff_uk_from_iso(value):
+    """Convert The Odds API UTC kickoff to Europe/London, including BST/GMT."""
+    if not value:
+        return None, None
+    try:
+        from zoneinfo import ZoneInfo
+        dt=pd.to_datetime(value,utc=True).to_pydatetime().astimezone(ZoneInfo("Europe/London"))
+        return dt, dt.strftime("%a %d %b • %H:%M UK")
+    except Exception:
+        return None, None
+
+def matched_kickoff_from_diag(matchdiag):
+    """Recover kickoff from the unique event trace even if bookmaker validation later fails."""
+    if not isinstance(matchdiag,dict): return None
+    hits=[t for t in matchdiag.get("trace",[]) if t.get("Home match") and t.get("Away match") and t.get("Date match")]
+    if len(hits)==1:
+        return hits[0].get("API time") or None
+    return None
 
 def consensus_for(events,home,away,fixture_date=None):
     """Fail-closed UK soccer 1X2 consensus plus rejection diagnostics."""
@@ -888,6 +907,12 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                         diagnostics.append({"League":lname,"Sport key":meta["odds"],"API events returned":"",
                                             "Credits used":"","Credits remaining":"",
                                             "Status":f'BOOK REJECT: {rb.get("Bookmaker")} — {rb.get("Reason")} — {rb.get("Outcomes","")}'})
+                # Kick-off source priority: uniquely matched Odds API event (UTC -> Europe/London).
+                # This is also used as a final event-identity check before a green BET is allowed.
+                kickoff_iso=(market.get("event",{}).get("commence_time") if market else None) or matched_kickoff_from_diag(matchdiag)
+                kickoff_dt,kickoff_label=kickoff_uk_from_iso(kickoff_iso)
+                if not kickoff_label:
+                    kickoff_label=f"{day.strftime('%a %d %b')} • time unavailable"
                 odd=np.nan; best_odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
                 if market:
                     med,mfair,books=market["median"],market["fair"],market["books"]
@@ -919,9 +944,15 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 elif edge > max_edge/100:
                     decision="VERIFY"
                     decision_reason=f"Positive candidate, but the {edge*100:.1f}pp edge exceeds the {max_edge:.0f}pp manual-verification ceiling."
+                elif not kickoff_iso:
+                    decision="VERIFY"
+                    decision_reason="Positive candidate, but the matched market has no verified kickoff timestamp."
+                elif matchdiag.get("stage")!="accepted":
+                    decision="VERIFY"
+                    decision_reason="Positive candidate, but the fixture/market audit did not finish in the accepted state."
                 else:
                     decision="BET"
-                    decision_reason="Clears confidence, edge, positive-EV, bookmaker-depth and market-integrity rules."
+                    decision_reason="AUTO VERIFIED — unique fixture, named 1X2 market, kickoff, confidence, edge, positive EV, bookmaker depth and market integrity all passed."
                 out.append({"League":lname,"Match":f"{h} v {a}","Pick":labels[i],
                             "Home %":round(pr[0]*100,1),"Draw %":round(pr[1]*100,1),
                             "Away %":round(pr[2]*100,1),"Confidence %":round(conf*100,1),
@@ -935,6 +966,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Market integrity":market.get("integrity") if market else None,
                             "Bookmaker detail":market.get("detail",[]) if market else [],
                             "Market diagnostic":matchdiag,
+                            "Kickoff ISO":kickoff_iso,"Kickoff UK":kickoff_label,
                             "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence})
@@ -984,8 +1016,8 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
 
     def match_card(r, expanded=False):
         icon={"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
-        with st.expander(f'{icon} {r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}%', expanded=expanded):
-            st.caption(f'{r["League"]}  •  Decision: {r["Decision"]}')
+        with st.expander(f'{icon} {r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}% • ⏰ {r.get("Kickoff UK","time unavailable")}', expanded=expanded):
+            st.caption(f'📅 {r.get("Kickoff UK","time unavailable")}  •  {r["League"]}  •  Decision: {r["Decision"]}')
             st.markdown(f'**🧠 {r["Model engine"]}**  ·  Validation: **{r["Validation"]}**')
             st.caption(r["Validation evidence"])
             c1,c2,c3=st.columns(3)
