@@ -7,8 +7,8 @@ from datetime import date
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-st.set_page_config(page_title="Football Predictor V6.1 Diagnostics", page_icon="⚽", layout="wide")
-st.title("⚽ Football Predictor V6.1 Diagnostics")
+st.set_page_config(page_title="Football Predictor V7 Mobile", page_icon="⚽", layout="wide")
+st.title("⚽ Football Predictor V7 Mobile")
 st.caption("Raw-GitHub fixtures + historical model + current UK bookmaker consensus odds. Market edge and EV are only calculated from verified 1X2 prices.")
 
 RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
@@ -183,9 +183,11 @@ scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 day=st.date_input("Match date",date.today())
 min_conf=st.slider("Minimum prediction confidence (%)",45,90,62)
 min_edge=st.slider("Minimum market edge (percentage points)",0,20,4)
+max_edge=st.slider("Maximum automatic edge before manual verification (pp)",8,30,15)
+min_books=st.slider("Minimum bookmakers required",3,25,8)
 topn=st.slider("Show top predictions",3,20,10)
 
-st.info("V6 uses OpenFootball for fixtures/history and The Odds API for current UK 1X2 prices. Without a connected odds key, V6 stays in prediction-only mode and cannot issue BET.")
+st.info("V7 is mobile-first. BET requires current matched odds, adequate bookmaker coverage, sufficient confidence/edge and positive EV. Extreme model-market disagreements are forced into VERIFY instead of BET.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -252,10 +254,14 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
                     odd=float(med[i]); mprob=float(mfair[i])
                     edge=conf-mprob
                     ev=conf*odd-1
-                if market and conf>=min_conf/100 and edge>=min_edge/100 and ev>0:
+                if not market:
+                    decision="PREDICTION ONLY" if conf>=min_conf/100 else "PASS"
+                elif books < min_books:
+                    decision="VERIFY"
+                elif edge > max_edge/100:
+                    decision="VERIFY"
+                elif conf>=min_conf/100 and edge>=min_edge/100 and ev>0:
                     decision="BET"
-                elif not market:
-                    decision="PREDICTION" if conf>=min_conf/100 else "PASS"
                 else:
                     decision="PASS"
                 out.append({"League":lname,"Match":f"{h} v {a}","Pick":labels[i],
@@ -276,28 +282,69 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
     if odds_key:
-        st.subheader("🧪 Odds diagnostics")
-        st.caption("This panel shows exactly what The Odds API returned and whether each OpenFootball fixture matched it. It is safe to screenshot: the API key is never displayed.")
-        if diagnostics:
-            st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
-        else:
-            st.warning("No odds diagnostics were produced.")
+        with st.expander("🧪 Data diagnostics"):
+            st.caption("Technical feed details. The API key is never displayed.")
+            if diagnostics:
+                st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
+            else:
+                st.warning("No odds diagnostics were produced.")
+
     st.subheader("🏆 Strongest qualifying selections")
     bets=d[d.Decision=="BET"].sort_values(["Edge pp","Confidence %"],ascending=False).head(topn)
     if len(bets):
-        st.dataframe(bets,hide_index=True,use_container_width=True)
+        st.success(f"{len(bets)} selection(s) clear every automatic rule.")
     elif st.session_state.get("odds_key","").strip():
-        st.info("No fixture clears confidence + market-edge + positive-EV rules. PASS is the correct output.")
+        st.info("No fixture clears every automatic BET rule. PASS is the correct output.")
     else:
-        q=d[d.Decision=="PREDICTION"].head(topn)
-        if q.empty: st.info("No fixture clears the confidence threshold.")
-        else: st.dataframe(q,hide_index=True,use_container_width=True)
+        st.info("Prediction-only mode: connect current odds before any BET decision.")
+
+    def fmt(v,suffix=""):
+        if pd.isna(v): return "—"
+        return f"{v}{suffix}"
+
+    def match_card(r, expanded=False):
+        icon={"BET":"🟢","VERIFY":"🟠","PASS":"⚪","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
+        with st.expander(f'{icon} {r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}%', expanded=expanded):
+            st.caption(f'{r["League"]}  •  Decision: {r["Decision"]}')
+            c1,c2,c3=st.columns(3)
+            c1.metric("Home",f'{r["Home %"]:.1f}%')
+            c2.metric("Draw",f'{r["Draw %"]:.1f}%')
+            c3.metric("Away",f'{r["Away %"]:.1f}%')
+            c1,c2=st.columns(2)
+            c1.metric("Model fair odds",fmt(r["Fair odds"]))
+            c2.metric("Market odds",fmt(r["Market odds"]))
+            c1,c2=st.columns(2)
+            c1.metric("Market fair %",fmt(r["Market fair %"],"%"))
+            c2.metric("Bookmakers",fmt(r["Bookmakers"]))
+            c1,c2=st.columns(2)
+            c1.metric("Edge",fmt(r["Edge pp"]," pp"))
+            c2.metric("Model EV",fmt(r["EV %"],"%"))
+            if r["Decision"]=="VERIFY":
+                st.warning("Manual verification required: the market disagreement is unusually large or bookmaker coverage is too thin. This is deliberately NOT labelled BET.")
+            elif r["Decision"]=="BET":
+                st.success("Clears the current confidence, market-edge, bookmaker-count and positive-EV rules.")
+            elif pd.isna(r["Market odds"]):
+                st.warning("No matched current odds. Prediction only.")
+
+    if len(bets):
+        for _,r in bets.iterrows():
+            match_card(r, expanded=True)
+
+    verifies=d[d.Decision=="VERIFY"].sort_values("Edge pp",ascending=False)
+    if len(verifies):
+        st.subheader("⚠️ Manual verification queue")
+        st.caption("Large model/market disagreements are isolated here instead of being treated as automatic value.")
+        for _,r in verifies.head(topn).iterrows():
+            match_card(r)
+
     st.subheader("All analysed matches")
-    st.dataframe(d,hide_index=True,use_container_width=True)
+    for _,r in d.head(max(topn,20)).iterrows():
+        match_card(r)
+
     if quota_remaining is not None:
         st.caption(f"Odds API credits remaining (provider header): {quota_remaining}")
     if not st.session_state.get("odds_key","").strip():
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V6.1 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V7 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
