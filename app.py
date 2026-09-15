@@ -3,12 +3,13 @@ import pandas as pd
 import numpy as np
 import requests
 from collections import defaultdict, deque
+from fractions import Fraction
 from datetime import date, datetime, timezone
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V16.1", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V16.2", page_icon="📈", layout="wide")
 
 
 
@@ -1159,6 +1160,21 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.info("Prediction-only mode: connect current odds before any BET decision.")
 
     st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 BET &nbsp; 🟠 VERIFY &nbsp; 🔴 PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
+    st.caption("🇬🇧 Odds are displayed as UK fractions. Decimal odds remain under the hood for probability, edge, EV and validation calculations.")
+
+    def decimal_to_fractional(v, max_denominator=100):
+        """UK-facing display only. All probability/EV maths remains decimal internally."""
+        try:
+            d=float(v)
+        except (TypeError, ValueError):
+            return "—"
+        if not np.isfinite(d) or d <= 1.0:
+            return "—"
+        frac=Fraction(d-1.0).limit_denominator(max_denominator)
+        n,den=frac.numerator,frac.denominator
+        if n == den:
+            return "Evens"
+        return f"{n}/{den}"
 
     def fmt(v,suffix=""):
         if pd.isna(v): return "—"
@@ -1175,10 +1191,10 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             c2.metric("Draw",f'{r["Draw %"]:.1f}%')
             c3.metric("Away",f'{r["Away %"]:.1f}%')
             c1,c2=st.columns(2)
-            c1.metric("Model fair odds",fmt(r["Fair odds"]))
-            c2.metric("Market odds",fmt(r["Market odds"]))
+            c1.metric("Model fair odds",decimal_to_fractional(r["Fair odds"]))
+            c2.metric("Market odds",decimal_to_fractional(r["Market odds"]))
             if pd.notna(r.get("Best market odds")):
-                st.caption(f'Best verified UK price for EV: {r["Best market odds"]:.2f} • Market integrity: {r.get("Market integrity","—")}')
+                st.caption(f'Best verified UK price for EV: {decimal_to_fractional(r["Best market odds"])} • Market integrity: {r.get("Market integrity","—")}')
             if r.get("Bookmaker detail"):
                 with st.expander("Bookmaker 1X2 audit"):
                     st.dataframe(pd.DataFrame(r["Bookmaker detail"]),use_container_width=True,hide_index=True)
