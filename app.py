@@ -9,7 +9,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V16.4", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V16.5", page_icon="📈", layout="wide")
 
 
 
@@ -310,6 +310,56 @@ def make_training(code,w=8):
             elo[h]+=24*(s-ex); elo[a]+=24*((1-s)-(1-ex))
             used+=1
     return pd.DataFrame(rows),hist,elo,used
+
+
+
+@st.cache_data(ttl=1800,show_spinner=False)
+def fixture_context(code, fixture_date, home, away):
+    """Transparent context layer from OpenFootball completed matches only. No injury claims are invented."""
+    season = SEASONS[-1]
+    try:
+        matches=season_json(season,code)["matches"]
+    except Exception:
+        return {"available":False,"reason":"Current-season context unavailable"}
+    cutoff=pd.to_datetime(fixture_date,errors="coerce")
+    rec=defaultdict(list); table=defaultdict(lambda:{"p":0,"pts":0,"gf":0,"ga":0,"w":0,"d":0,"l":0})
+    for m in sorted(matches,key=lambda z:str(z.get("date",""))):
+        dt=pd.to_datetime(m.get("date"),errors="coerce"); sc=score_ft(m)
+        if sc is None or pd.isna(dt) or (not pd.isna(cutoff) and dt>=cutoff): continue
+        h=team_name(m.get("team1","")).strip(); a=team_name(m.get("team2","")).strip(); hg,ag=sc
+        if not h or not a: continue
+        hp,ap=(3,0) if hg>ag else ((0,3) if hg<ag else (1,1))
+        for t,gf,ga,pts,venue in [(h,hg,ag,hp,"H"),(a,ag,hg,ap,"A")]:
+            x=table[t]; x["p"]+=1; x["pts"]+=pts; x["gf"]+=gf; x["ga"]+=ga
+            x["w"]+=pts==3; x["d"]+=pts==1; x["l"]+=pts==0
+            rec[t].append({"date":dt,"gf":gf,"ga":ga,"pts":pts,"venue":venue,"cs":ga==0,"btts":gf>0 and ga>0})
+    order=sorted(table,key=lambda t:(table[t]["pts"],table[t]["gf"]-table[t]["ga"],table[t]["gf"]),reverse=True)
+    pos={t:i+1 for i,t in enumerate(order)}
+    def snap(t,venue):
+        rr=rec.get(t,[]); last=rr[-8:]; va=[x for x in rr if x["venue"]==venue][-5:]
+        def form(xs): return "".join("W" if x["pts"]==3 else "D" if x["pts"]==1 else "L" for x in xs) or "—"
+        return {"position":pos.get(t),"played":table[t]["p"],"points":table[t]["pts"],"form":form(last),
+                "ppg":round(sum(x["pts"] for x in last)/len(last),2) if last else None,
+                "gf":round(sum(x["gf"] for x in last)/len(last),2) if last else None,
+                "ga":round(sum(x["ga"] for x in last)/len(last),2) if last else None,
+                "clean_sheet":round(100*sum(x["cs"] for x in last)/len(last),1) if last else None,
+                "btts":round(100*sum(x["btts"] for x in last)/len(last),1) if last else None,
+                "venue_form":form(va),"venue_ppg":round(sum(x["pts"] for x in va)/len(va),2) if va else None}
+    hs,as_=snap(home,"H"),snap(away,"A")
+    # Simple transparent scoreline context, not a replacement for the 1X2 model.
+    import math
+    lh=max(.15, ((hs.get("gf") or 1.2)+(as_.get("ga") or 1.2))/2)
+    la=max(.15, ((as_.get("gf") or 1.0)+(hs.get("ga") or 1.0))/2)
+    scores=[]
+    for i in range(6):
+        for j in range(6):
+            pr=math.exp(-lh)*lh**i/math.factorial(i)*math.exp(-la)*la**j/math.factorial(j)
+            scores.append((pr,f"{i}-{j}"))
+    scores=sorted(scores,reverse=True)[:3]
+    return {"available":True,"home":hs,"away":as_,"xg_like_home":round(lh,2),"xg_like_away":round(la,2),
+            "scorelines":[{"score":x[1],"prob":round(x[0]*100,1)} for x in scores],
+            "injuries":"UNAVAILABLE — no verified injury/suspension provider connected"}
+
 
 @st.cache_resource(show_spinner=False)
 def train(lname,code):
@@ -1117,8 +1167,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     odd=float(med[i]); best_odd=float(market["best"][i]); mprob=float(mfair[i])
                     edge=conf-mprob
                     ev=conf*best_odd-1
+                context = fixture_context(code, fixture_date, h, a)
                 secondary_checks=[]
-                # V16.4 decision hierarchy: establish whether this is a positive betting candidate,
+                # V16.5 decision hierarchy: establish whether this is a positive betting candidate,
                 # then automatically investigate unusually large edges instead of handing work to the user. VERIFY is reserved for otherwise-qualifying
                 # candidates whose market evidence needs manual checking.
                 if not market:
@@ -1168,7 +1219,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Kickoff ISO":kickoff_iso,"Kickoff UK":kickoff_label,
                             "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
-                            "Validation evidence":validation_evidence,"Secondary checks":secondary_checks})
+                            "Validation evidence":validation_evidence,"Secondary checks":secondary_checks,"Context":context})
     if warnings:
         with st.expander("Data/model warnings"):
             for w in warnings: st.warning(w)
@@ -1283,6 +1334,20 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             c1,c2=st.columns(2)
             c1.metric("Edge",fmt(r["Edge pp"]," pp"))
             c2.metric("Model EV",fmt(r["EV %"],"%"))
+            ctx=r.get("Context")
+            if isinstance(ctx,dict) and ctx.get("available"):
+                with st.expander("📚 Context intelligence", expanded=False):
+                    hh,aa=ctx.get("home",{}),ctx.get("away",{})
+                    st.write(f'**League position:** {r.get("Home team")} {hh.get("position","—")} • {r.get("Away team")} {aa.get("position","—")}')
+                    st.write(f'**Last 8 form:** {r.get("Home team")} {hh.get("form","—")} • {r.get("Away team")} {aa.get("form","—")}')
+                    st.write(f'**Recent PPG:** {hh.get("ppg","—")} vs {aa.get("ppg","—")} • **Home/Away PPG:** {hh.get("venue_ppg","—")} vs {aa.get("venue_ppg","—")}')
+                    st.write(f'**Recent goals for/against:** {hh.get("gf","—")}/{hh.get("ga","—")} vs {aa.get("gf","—")}/{aa.get("ga","—")}')
+                    st.write(f'**Clean sheets:** {hh.get("clean_sheet","—")}% vs {aa.get("clean_sheet","—")}% • **BTTS:** {hh.get("btts","—")}% vs {aa.get("btts","—")}%')
+                    sc=ctx.get("scorelines",[])
+                    if sc: st.write("**Context scoreline distribution:** "+" • ".join(f'{x["score"]} {x["prob"]}%' for x in sc))
+                    st.caption("Scoreline distribution is a transparent recent-scoring context check, not the primary 1X2 model and not a betting signal by itself.")
+                    st.warning("Team-news check: unavailable — no verified injury/suspension provider is connected, so the app does not invent injury information.")
+
             if r["Decision"]=="VERIFY":
                 st.warning(f'🟠 VERIFY — {r.get("Decision reason", "Manual market verification required.")} This is deliberately NOT labelled BET.')
             elif r["Decision"]=="BET":
@@ -1357,7 +1422,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V16.4 auto-verification rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V16.5 context-intelligence + auto-verification rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
 st.markdown("""
 <div class="v14-nav">
