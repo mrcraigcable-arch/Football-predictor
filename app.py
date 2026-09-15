@@ -1082,7 +1082,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V16.1 • LIVE VALIDATION — BET signals are frozen at first classification; later checks update price movement without rewriting the original signal.")
+st.info("V16.5.2 • SIMPLE MATCH OVERVIEW — BET signals are frozen at first classification; later checks update price movement without rewriting the original signal.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1336,17 +1336,57 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             c2.metric("Model EV",fmt(r["EV %"],"%"))
             ctx=r.get("Context")
             if isinstance(ctx,dict) and ctx.get("available"):
-                with st.expander("📚 Context intelligence", expanded=False):
+                with st.expander("⚽ Match overview", expanded=False):
                     hh,aa=ctx.get("home",{}),ctx.get("away",{})
-                    st.write(f'**League position:** {r.get("Home team")} {hh.get("position","—")} • {r.get("Away team")} {aa.get("position","—")}')
-                    st.write(f'**Last 8 form:** {r.get("Home team")} {hh.get("form","—")} • {r.get("Away team")} {aa.get("form","—")}')
-                    st.write(f'**Recent PPG:** {hh.get("ppg","—")} vs {aa.get("ppg","—")} • **Home/Away PPG:** {hh.get("venue_ppg","—")} vs {aa.get("venue_ppg","—")}')
-                    st.write(f'**Recent goals for/against:** {hh.get("gf","—")}/{hh.get("ga","—")} vs {aa.get("gf","—")}/{aa.get("ga","—")}')
-                    st.write(f'**Clean sheets:** {hh.get("clean_sheet","—")}% vs {aa.get("clean_sheet","—")}% • **BTTS:** {hh.get("btts","—")}% vs {aa.get("btts","—")}%')
+                    home_name,away_name=r.get("Home team"),r.get("Away team")
+                    def form_label(x):
+                        p=x.get("ppg")
+                        if p is None: return "⚪ Unknown"
+                        if p >= 1.8: return "🟢 Strong"
+                        if p >= 1.2: return "🟡 Average"
+                        if p >= .8: return "🟠 Mixed"
+                        return "🔴 Poor"
+                    def defence_label(x):
+                        ga=x.get("ga")
+                        if ga is None: return "⚪ Unknown"
+                        if ga <= .8: return "🟢 Strong"
+                        if ga <= 1.3: return "🟡 Average"
+                        if ga <= 1.8: return "🟠 Below average"
+                        return "🔴 Weak"
+                    def btts_label(x):
+                        b=x.get("btts")
+                        if b is None: return "Unknown"
+                        if b >= 70: return "Very high"
+                        if b >= 50: return "High"
+                        if b >= 30: return "Medium"
+                        return "Low"
+                    st.markdown(f'**Table:** {home_name} {hh.get("position","—")}th • {away_name} {aa.get("position","—")}th')
+                    st.markdown(f'**Form:** {home_name} {form_label(hh)} • {away_name} {form_label(aa)}')
+                    st.markdown(f'**Defence:** {home_name} {defence_label(hh)} • {away_name} {defence_label(aa)}')
+                    st.markdown(f'**BTTS:** {home_name} {btts_label(hh)} • {away_name} {btts_label(aa)}')
                     sc=ctx.get("scorelines",[])
-                    if sc: st.write("**Context scoreline distribution:** "+" • ".join(f'{x["score"]} {x["prob"]}%' for x in sc))
-                    st.caption("Scoreline distribution is a transparent recent-scoring context check, not the primary 1X2 model and not a betting signal by itself.")
-                    st.warning("Team-news check: unavailable — no verified injury/suspension provider is connected, so the app does not invent injury information.")
+                    if sc: st.markdown("**Likely scores:** "+" • ".join(f'**{x["score"]}**' for x in sc))
+                    pred=str(r.get("Prediction","")).upper()
+                    hp=hh.get("ppg"); ap=aa.get("ppg"); hv=hh.get("venue_ppg"); av=aa.get("venue_ppg")
+                    verdict="NEUTRAL"; note="Context is mixed and does not strongly confirm or contradict the model."
+                    if pred=="HOME" and hp is not None and ap is not None:
+                        support=(hp-ap)+.5*((hv or hp)-(av or ap))
+                        if support >= .5: verdict,note="SUPPORTS MODEL","Recent form and venue form broadly support the HOME prediction."
+                        elif support <= -.35: verdict,note="CAUTION","Recent form does not strongly support the HOME prediction."
+                    elif pred=="AWAY" and hp is not None and ap is not None:
+                        support=(ap-hp)+.5*((av or ap)-(hv or hp))
+                        if support >= .5: verdict,note="SUPPORTS MODEL","Recent form and venue form broadly support the AWAY prediction."
+                        elif support <= -.35: verdict,note="CAUTION","Recent form does not strongly support the AWAY prediction."
+                    if verdict=="SUPPORTS MODEL": st.success(f"🟢 CONTEXT: {verdict} — {note}")
+                    elif verdict=="CAUTION": st.warning(f"🟠 CONTEXT: {verdict} — {note}")
+                    else: st.info(f"🔵 CONTEXT: {verdict} — {note}")
+                    with st.expander("Show detailed stats"):
+                        st.write(f'Last 8: {home_name} {hh.get("form","—")} • {away_name} {aa.get("form","—")}')
+                        st.write(f'PPG: {hh.get("ppg","—")} vs {aa.get("ppg","—")} • Home/Away PPG: {hh.get("venue_ppg","—")} vs {aa.get("venue_ppg","—")}')
+                        st.write(f'Goals for/against: {hh.get("gf","—")}/{hh.get("ga","—")} vs {aa.get("gf","—")}/{aa.get("ga","—")}')
+                        st.write(f'Clean sheets: {hh.get("clean_sheet","—")}% vs {aa.get("clean_sheet","—")}%')
+                        if sc: st.write("Scoreline context: "+" • ".join(f'{x["score"]} {x["prob"]}%' for x in sc))
+                        st.caption("Team news is not shown until a verified injury/suspension source is connected.")
 
             if r["Decision"]=="VERIFY":
                 st.warning(f'🟠 VERIFY — {r.get("Decision reason", "Manual market verification required.")} This is deliberately NOT labelled BET.')
