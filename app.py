@@ -8,7 +8,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V15.6", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V16", page_icon="📈", layout="wide")
 
 
 
@@ -132,7 +132,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V15</span>
+ <span class="v14-chip">V16</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -169,7 +169,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V15</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V16</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -833,9 +833,113 @@ with pc2:
     max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
     topn=st.number_input("Show top predictions",min_value=3,max_value=20,value=10,step=1)
     day=st.date_input("Match date",date.today())
+
+# --- V16 live validation ledger -------------------------------------------------
+LEDGER_COLUMNS=[
+    "Signal ID","Recorded UTC","League","Home team","Away team","Kickoff ISO","Kickoff UK","Pick",
+    "Model probability %","Market fair %","Consensus odds","Entry best odds","Latest best odds",
+    "Bookmakers","Edge pp","Expected value %","Engine","Validation","Result","Won","Profit units",
+    "Latest snapshot UTC","Minutes to kickoff","CLV %","CLV status"
+]
+
+def _empty_ledger():
+    return pd.DataFrame(columns=LEDGER_COLUMNS)
+
+def _ensure_ledger():
+    if "v16_ledger" not in st.session_state or not isinstance(st.session_state.v16_ledger,pd.DataFrame):
+        st.session_state.v16_ledger=_empty_ledger()
+    for c in LEDGER_COLUMNS:
+        if c not in st.session_state.v16_ledger.columns: st.session_state.v16_ledger[c]=np.nan
+    st.session_state.v16_ledger=st.session_state.v16_ledger[LEDGER_COLUMNS]
+
+def _signal_id(r):
+    return "|".join([str(r.get("League","")),str(r.get("Home team","")),str(r.get("Away team","")),str(r.get("Kickoff ISO","")),str(r.get("Pick",""))])
+
+def _record_live_bets(df):
+    _ensure_ledger(); led=st.session_state.v16_ledger.copy(); now=datetime.now(timezone.utc)
+    for _,r in df[df.Decision=="BET"].iterrows():
+        sid=_signal_id(r); best=float(r["Best market odds"]); kickoff=pd.to_datetime(r.get("Kickoff ISO"),utc=True,errors="coerce")
+        mins=(kickoff.to_pydatetime()-now).total_seconds()/60 if pd.notna(kickoff) else np.nan
+        existing=led.index[led["Signal ID"]==sid].tolist()
+        if existing:
+            j=existing[0]; led.at[j,"Latest best odds"]=best; led.at[j,"Latest snapshot UTC"]=now.isoformat(); led.at[j,"Minutes to kickoff"]=round(mins,1) if np.isfinite(mins) else np.nan
+            entry=float(led.at[j,"Entry best odds"]) if pd.notna(led.at[j,"Entry best odds"]) else np.nan
+            if np.isfinite(entry) and best>0:
+                # Decimal-odds CLV: entry/closing - 1. Positive means the signal beat the later price.
+                led.at[j,"CLV %"]=round((entry/best-1)*100,2)
+                led.at[j,"CLV status"]="VERIFIED near-kickoff snapshot" if np.isfinite(mins) and 0<=mins<=60 else "PROVISIONAL — latest pre-kickoff snapshot"
+        else:
+            row={c:np.nan for c in LEDGER_COLUMNS}
+            row.update({"Signal ID":sid,"Recorded UTC":now.isoformat(),"League":r["League"],"Home team":r["Home team"],"Away team":r["Away team"],
+                "Kickoff ISO":r.get("Kickoff ISO"),"Kickoff UK":r.get("Kickoff UK"),"Pick":r["Pick"],"Model probability %":r["Confidence %"],
+                "Market fair %":r.get("Market fair %"),"Consensus odds":r.get("Market odds"),"Entry best odds":best,"Latest best odds":best,
+                "Bookmakers":r.get("Bookmakers"),"Edge pp":r.get("Edge pp"),"Expected value %":r.get("EV %"),"Engine":r.get("Model engine"),
+                "Validation":r.get("Validation"),"Result":"PENDING","Won":np.nan,"Profit units":np.nan,"Latest snapshot UTC":now.isoformat(),
+                "Minutes to kickoff":round(mins,1) if np.isfinite(mins) else np.nan,"CLV %":0.0,"CLV status":"ENTRY SNAPSHOT"})
+            led=pd.concat([led,pd.DataFrame([row])],ignore_index=True)
+    st.session_state.v16_ledger=led[LEDGER_COLUMNS]
+
+def _settle_ledger():
+    _ensure_ledger(); led=st.session_state.v16_ledger.copy()
+    for j,r in led.iterrows():
+        if str(r.get("Result","PENDING")) not in ("PENDING","nan",""): continue
+        lname=r.get("League"); meta=LEAGUES.get(lname)
+        if not meta: continue
+        try: matches=fixtures_for(meta["of"])
+        except Exception: continue
+        target=None
+        for m in matches:
+            h=team_name(m.get("team1","")).strip(); a=team_name(m.get("team2","")).strip()
+            if team_match(r.get("Home team",""),h) and team_match(r.get("Away team",""),a):
+                sc=score_ft(m)
+                if sc is not None: target=sc; break
+        if target is None: continue
+        hg,ag=target; actual="HOME" if hg>ag else "AWAY" if ag>hg else "DRAW"; won=(actual==r.get("Pick"))
+        price=float(r.get("Entry best odds")) if pd.notna(r.get("Entry best odds")) else np.nan
+        led.at[j,"Result"]=f"{hg}-{ag} ({actual})"; led.at[j,"Won"]=bool(won); led.at[j,"Profit units"]=round(price-1,3) if won and np.isfinite(price) else -1.0
+    st.session_state.v16_ledger=led[LEDGER_COLUMNS]
+
+def _tracker_panel():
+    _ensure_ledger(); _settle_ledger(); led=st.session_state.v16_ledger
+    st.subheader("🧾 V16 Live Validation Tracker")
+    st.caption("Signals are frozen at first BET classification. Re-running before kickoff updates only the latest-price snapshot. The ledger lives in this Streamlit session, so export it to keep a durable copy.")
+    uploaded=st.file_uploader("Restore a previously exported V16 ledger",type=["csv"],key="v16_ledger_upload")
+    if uploaded is not None and st.button("RESTORE LEDGER",use_container_width=True,key="restore_v16"):
+        try:
+            imp=pd.read_csv(uploaded); missing=[c for c in LEDGER_COLUMNS if c not in imp.columns]
+            if missing: st.error("That file is not a V16 ledger: missing "+", ".join(missing[:5]))
+            else: st.session_state.v16_ledger=imp[LEDGER_COLUMNS]; st.success(f"Restored {len(imp)} signal(s)."); st.rerun()
+        except Exception as e: st.error(f"Could not restore ledger: {e}")
+    led=st.session_state.v16_ledger
+    if led.empty:
+        st.info("No V16 BET signals have been recorded in this session yet."); return
+    settled=led[led["Profit units"].notna()]; wins=int((settled["Won"]==True).sum()) if len(settled) else 0
+    pnl=float(pd.to_numeric(settled["Profit units"],errors="coerce").sum()) if len(settled) else 0.0
+    roi=(pnl/len(settled)*100) if len(settled) else np.nan
+    clv=pd.to_numeric(led.loc[led["CLV status"]=="VERIFIED near-kickoff snapshot","CLV %"],errors="coerce").dropna()
+    a,b,c,d=st.columns(4); a.metric("Signals",len(led)); b.metric("Settled",len(settled)); c.metric("Strike rate",f"{wins/len(settled)*100:.1f}%" if len(settled) else "—"); d.metric("ROI",f"{roi:.1f}%" if np.isfinite(roi) else "—")
+    # Evidence metrics are descriptive only; no threshold is auto-tuned from this live sample.
+    max_dd=np.nan; cal_gap=np.nan; brier=np.nan
+    if len(settled):
+        ordered=settled.sort_values("Recorded UTC"); profits=pd.to_numeric(ordered["Profit units"],errors="coerce").fillna(0).to_numpy(); curve=np.cumsum(profits); peaks=np.maximum.accumulate(np.r_[0.0,curve]); draw=np.r_[0.0,curve]-peaks; max_dd=float(draw.min())
+        probs=pd.to_numeric(settled["Model probability %"],errors="coerce").to_numpy()/100; yy=(settled["Won"]==True).astype(float).to_numpy(); ok=np.isfinite(probs)
+        if ok.any(): brier=float(np.mean((probs[ok]-yy[ok])**2)); cal_gap=float(np.mean(probs[ok])*100-np.mean(yy[ok])*100)
+    e1,e2,e3=st.columns(3); e1.metric("Max drawdown",f"{max_dd:.2f}u" if np.isfinite(max_dd) else "—"); e2.metric("Calibration gap",f"{cal_gap:+.1f}pp" if np.isfinite(cal_gap) else "—"); e3.metric("Pick Brier",f"{brier:.3f}" if np.isfinite(brier) else "—")
+    st.caption(f"Profit/loss: {pnl:+.2f} units at recorded best price" + (f" • Mean verified CLV: {clv.mean():+.2f}%" if len(clv) else " • Verified CLV: not enough near-kickoff snapshots yet"))
+    show=led[["Kickoff UK","League","Home team","Away team","Pick","Model probability %","Entry best odds","Latest best odds","Edge pp","Expected value %","Result","Profit units","CLV %","CLV status"]].copy()
+    st.dataframe(show,use_container_width=True,hide_index=True)
+    if len(settled):
+        with st.expander("Performance by league"):
+            perf=[]
+            for lg,g in settled.groupby("League"):
+                gp=pd.to_numeric(g["Profit units"],errors="coerce").sum(); n=len(g); w=int((g["Won"]==True).sum())
+                perf.append({"League":lg,"Bets":n,"Wins":w,"Strike %":round(w/n*100,1),"Profit units":round(gp,2),"ROI %":round(gp/n*100,1)})
+            st.dataframe(pd.DataFrame(perf).sort_values("Bets",ascending=False),use_container_width=True,hide_index=True)
+    st.download_button("⬇️ EXPORT V16 LEDGER CSV",data=led.to_csv(index=False).encode("utf-8"),file_name="football_predictor_v16_live_ledger.csv",mime="text/csv",use_container_width=True)
+
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15.5 decision-engine correction: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V16 LIVE VALIDATION: qualifying BET signals are timestamped into the validation ledger. Results settle from the fixture feed; price movement/CLV is only labelled verified when a near-kickoff snapshot exists.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -953,7 +1057,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 else:
                     decision="BET"
                     decision_reason="AUTO VERIFIED — unique fixture, named 1X2 market, kickoff, confidence, edge, positive EV, bookmaker depth and market integrity all passed."
-                out.append({"League":lname,"Match":f"{h} v {a}","Pick":labels[i],
+                out.append({"League":lname,"Match":f"{h} v {a}","Home team":h,"Away team":a,"Pick":labels[i],
                             "Home %":round(pr[0]*100,1),"Draw %":round(pr[1]*100,1),
                             "Away %":round(pr[2]*100,1),"Confidence %":round(conf*100,1),
                             "Fair odds":round(1/conf,2),
@@ -977,8 +1081,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.info("No supported OpenFootball fixtures were found for that date.")
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
+    _record_live_bets(d)
 
-    # V15 dashboard summary
+    # V16 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
@@ -1101,13 +1206,16 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     for _,r in d.head(max(topn,20)).iterrows():
         match_card(r)
 
+    st.divider()
+    _tracker_panel()
+
     if quota_remaining is not None:
         st.caption(f"Odds API credits remaining (provider header): {quota_remaining}")
     if not st.session_state.get("odds_key","").strip():
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V15.3 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V16 fail-closed rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
 st.markdown("""
 <div class="v14-nav">
