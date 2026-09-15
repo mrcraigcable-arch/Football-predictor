@@ -8,11 +8,11 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V13", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V14", page_icon="📈", layout="wide")
 
 
 
-# --- V13 VISUAL SYSTEM: mobile-first neon dashboard ---
+# --- V14 VISUAL SYSTEM: mobile-first neon dashboard ---
 st.markdown("""
 <style>
 :root{
@@ -87,24 +87,24 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 [data-testid="stDataFrame"]{border-radius:16px;overflow:hidden;border:1px solid var(--line)}
 
 /* visual badges reusable from markdown */
-.v13-brand{
+.v14-brand{
  border:1px solid #0b8057;border-radius:18px;padding:16px 18px;margin:4px 0 16px;
  background:linear-gradient(135deg,rgba(0,239,131,.12),rgba(5,29,46,.92) 45%,rgba(10,67,95,.35));
  box-shadow:0 8px 30px rgba(0,0,0,.20)
 }
-.v13-brandline{display:flex;align-items:center;gap:12px}
-.v13-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
-.v13-title{font-size:1.55rem;font-weight:900;line-height:1.05}
-.v13-title b{color:var(--green)}
-.v13-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
-.v13-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
+.v14-brandline{display:flex;align-items:center;gap:12px}
+.v14-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
+.v14-title{font-size:1.55rem;font-weight:900;line-height:1.05}
+.v14-title b{color:var(--green)}
+.v14-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
+.v14-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
  padding:5px 11px;color:#00f18a;font-weight:900;background:#06251b}
-.v13-section{
+.v14-section{
  margin:18px 0 10px;padding:10px 13px;border-left:4px solid var(--cyan);
  background:linear-gradient(90deg,rgba(20,158,255,.13),transparent);
  border-radius:10px;font-weight:850;font-size:1.22rem
 }
-.v13-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
+.v14-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
  margin:8px 0 16px;color:#d9e7f3}
 .green{color:var(--green)} .amber{color:var(--amber)} .red{color:var(--red)} .blue{color:#2b9cff}
 
@@ -114,28 +114,28 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 }
 @media(max-width:699px){
  .block-container{padding-left:.85rem;padding-right:.85rem}
- .v13-title{font-size:1.35rem}
+ .v14-title{font-size:1.35rem}
  h1{font-size:2rem}
  h2{font-size:1.65rem}
  div[data-testid="stMetric"]{min-height:96px}
 }
 
 /* bottom visual nav */
-.v13-nav{
+.v14-nav{
  position:fixed;left:0;right:0;bottom:0;z-index:999;
  display:flex;justify-content:space-around;align-items:center;
  padding:10px 8px calc(10px + env(safe-area-inset-bottom));
  background:rgba(3,17,29,.96);border-top:1px solid #17425e;
  backdrop-filter:blur(14px);box-shadow:0 -8px 25px rgba(0,0,0,.30)
 }
-.v13-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
-.v13-nav .active{color:var(--green);font-weight:800}
+.v14-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
+.v14-nav .active{color:var(--green);font-weight:800}
 </style>
-<div class="v13-brand">
- <span class="v13-chip">V13</span>
- <div class="v13-brandline"><span class="v13-logo">📈</span>
- <div><div class="v13-title">Craig's Football <b>Predictor</b></div>
- <div class="v13-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
+<div class="v14-brand">
+ <span class="v14-chip">V14</span>
+ <div class="v14-brandline"><span class="v14-logo">📈</span>
+ <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
+ <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -169,7 +169,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V13</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V14</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -189,7 +189,7 @@ LEAGUES={
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV13/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV14/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -359,7 +359,7 @@ def calibration_grade(gap):
     a=abs(float(gap))
     return "GOOD" if a<=3 else ("WATCH" if a<=6 else "POOR")
 
-st.markdown('<div class="v13-section">🧪 Model validation</div>', unsafe_allow_html=True)
+st.markdown('<div class="v14-section">🧪 Model validation</div>', unsafe_allow_html=True)
 with st.expander("Run chronological backtest",expanded=False):
     st.caption("Train on the earlier 80% of historical matches and test only on the later unseen 20%.")
     bt_league=st.selectbox("Backtest competition",list(LEAGUES),key="bt_league")
@@ -384,7 +384,7 @@ with st.expander("Run chronological backtest",expanded=False):
 
 
 # =========================
-# V13 MODEL LAB
+# V14 MODEL LAB
 # =========================
 def _fit_candidate(train, model_name):
     X=train[FEATURES].fillna(0)
@@ -394,7 +394,7 @@ def _fit_candidate(train, model_name):
     elif model_name=="Regularised":
         m=HistGradientBoostingClassifier(max_iter=130,max_leaf_nodes=9,learning_rate=.055,
                                          min_samples_leaf=28,l2_regularization=5,random_state=42)
-    else:  # V13 Live Conservative
+    else:  # V14 Live Conservative
         m=HistGradientBoostingClassifier(max_iter=100,max_leaf_nodes=7,learning_rate=.045,
                                          min_samples_leaf=38,l2_regularization=8,random_state=42)
     m.fit(X,y)
@@ -430,7 +430,7 @@ def walk_forward_model_lab(code):
     start=int(len(f)*.55)
     remaining=len(f)-start
     block=max(80,remaining//5)
-    models=["Legacy V11","Regularised","V13 Live Conservative"]
+    models=["Legacy V11","Regularised","V14 Live Conservative"]
     agg={m:[] for m in models}
     fold_rows=[]
 
@@ -480,18 +480,18 @@ st.markdown("""
 <div style="background:linear-gradient(135deg,#063b31,#08253d);border:1px solid #00e59b;
 border-radius:20px;padding:18px;margin:12px 0 18px 0;">
 <div style="font-size:13px;color:#77f7c7;font-weight:800;letter-spacing:.08em;">LIVE ENGINE</div>
-<div style="font-size:26px;font-weight:900;color:white;margin-top:4px;">🛡️ Conservative promoted</div>
+<div style="font-size:26px;font-weight:900;color:white;margin-top:4px;">🎯 Calibrated Conservative live</div>
 <div style="color:#b9c7d5;margin-top:8px;line-height:1.5;">
-Won the unseen-data comparison in all 6 tested leagues. V13 now uses this configuration for live match probabilities.
+Conservative won all 6 unseen-data league tests. V14 retains that engine and adds a chronological sigmoid-calibration layer so displayed probabilities are tested for reliability before we trust them.
 </div>
 </div>
 """,unsafe_allow_html=True)
 
-st.markdown('<div class="v13-section">🧠 V13 Model Lab</div>',unsafe_allow_html=True)
+st.markdown('<div class="v14-section">🧠 V14 Model Lab</div>',unsafe_allow_html=True)
 with st.expander("Walk-forward model comparison",expanded=False):
-    st.caption("V13 repeatedly trains only on the past and predicts the next chronological block. Three model configurations compete on exactly the same unseen matches.")
-    lab_league=st.selectbox("Model Lab competition",list(LEAGUES),key="v13_lab_league")
-    if st.button("RUN V13 MODEL LAB",use_container_width=True,key="run_v13_lab"):
+    st.caption("V14 repeatedly trains only on the past and predicts the next chronological block. Three model configurations compete on exactly the same unseen matches.")
+    lab_league=st.selectbox("Model Lab competition",list(LEAGUES),key="v14_lab_league")
+    if st.button("RUN V14 MODEL LAB",use_container_width=True,key="run_v14_lab"):
         with st.spinner("Running expanding-window model comparison..."):
             try:
                 summary,folds=walk_forward_model_lab(LEAGUES[lab_league]["of"])
@@ -507,16 +507,16 @@ with st.expander("Walk-forward model comparison",expanded=False):
                     improvement=(current["Log loss"]-winner["Log loss"])/current["Log loss"]*100
                     st.success(f'{winner["Model"]} beats the V11 configuration on unseen log loss by {improvement:.1f}%. This is evidence for promotion, not an automatic live-model switch.')
                 else:
-                    st.warning("The legacy V11 configuration was not convincingly beaten. V13 will not promote extra complexity just because it is newer.")
+                    st.warning("The legacy V11 configuration was not convincingly beaten. V14 will not promote extra complexity just because it is newer.")
                 with st.expander("See every chronological fold"):
                     st.dataframe(folds,hide_index=True,use_container_width=True)
             except Exception as e:
-                st.error(f"V13 Model Lab could not complete: {e}")
+                st.error(f"V14 Model Lab could not complete: {e}")
 
 
 
 @st.cache_data(ttl=3600,show_spinner=False)
-def v13_historical_strategy_test(code, min_conf_pct):
+def v14_historical_strategy_test(code, min_conf_pct):
     """
     Walk-forward prediction audit. This never invents historical bookmaker prices.
     If the underlying historical frame does not contain verified H/D/A odds,
@@ -560,15 +560,92 @@ def v13_historical_strategy_test(code, min_conf_pct):
         "roi_available":False
     }
 
-st.markdown("### 💷 V13 Strategy Audit")
-st.caption("Tests the promoted live model on later unseen matches. V13 will not fabricate historical odds: ROI stays disabled until verified historical prices are available in the dataset.")
+
+def _fit_v14_calibrated(train):
+    """Fit Conservative base model, then sigmoid-calibrate on a later calibration slice."""
+    if len(train)<350:
+        m=HistGradientBoostingClassifier(max_iter=100,max_leaf_nodes=7,learning_rate=.045,
+                                         min_samples_leaf=38,l2_regularization=8,random_state=42)
+        m.fit(train[FEATURES].fillna(0),train["y"])
+        return m
+    cut=max(250,int(len(train)*.82))
+    proper=train.iloc[:cut]
+    cal=train.iloc[cut:]
+    base=HistGradientBoostingClassifier(max_iter=100,max_leaf_nodes=7,learning_rate=.045,
+                                        min_samples_leaf=38,l2_regularization=8,random_state=42)
+    base.fit(proper[FEATURES].fillna(0),proper["y"])
+    if len(cal)>=75 and cal["y"].nunique()==3:
+        try:
+            calibrated=CalibratedClassifierCV(base,method="sigmoid",cv="prefit")
+            calibrated.fit(cal[FEATURES].fillna(0),cal["y"])
+            return calibrated
+        except Exception:
+            pass
+    return base
+
+@st.cache_data(ttl=3600,show_spinner=False)
+def v14_calibration_lab(code,min_conf_pct):
+    f,_,_,_=make_training(code)
+    f=f.reset_index(drop=True)
+    if len(f)<900: raise RuntimeError("Not enough history for calibration validation.")
+    start=int(len(f)*.55); block=max(80,(len(f)-start)//5)
+    raw_rows=[]; cal_rows=[]; pos=start
+    while pos<len(f):
+        end=min(len(f),pos+block)
+        if end-pos<35: break
+        train=f.iloc[:pos]; test=f.iloc[pos:end]
+        raw=HistGradientBoostingClassifier(max_iter=100,max_leaf_nodes=7,learning_rate=.045,
+                                           min_samples_leaf=38,l2_regularization=8,random_state=42)
+        raw.fit(train[FEATURES].fillna(0),train["y"])
+        calibrated=_fit_v14_calibrated(train)
+        actual=test["y"].to_numpy()
+        for label,model,bucket in [("Raw",raw,raw_rows),("Calibrated",calibrated,cal_rows)]:
+            proba=model.predict_proba(test[FEATURES].fillna(0))
+            pred=np.argmax(proba,axis=1); conf=np.max(proba,axis=1)
+            for i in range(len(test)):
+                bucket.append({"confidence":float(conf[i]),"correct":bool(pred[i]==actual[i])})
+        pos=end
+
+    out=[]
+    threshold=min_conf_pct/100
+    for name,rows in [("Raw Conservative",raw_rows),("V14 Calibrated",cal_rows)]:
+        r=pd.DataFrame(rows); q=r[r["confidence"]>=threshold]
+        if len(q):
+            out.append({"Model":name,"Qualifying picks":len(q),
+                        "Strike rate %":round(q["correct"].mean()*100,1),
+                        "Avg confidence %":round(q["confidence"].mean()*100,1),
+                        "Calibration gap pp":round((q["confidence"].mean()-q["correct"].mean())*100,1)})
+    return pd.DataFrame(out)
+
+st.markdown("### 🎯 V14 Probability Calibration")
+st.caption("V14 learns its probability correction only from earlier matches, then tests the corrected probabilities on later unseen matches.")
+with st.expander("Run calibration comparison",expanded=False):
+    cal_league=st.selectbox("Calibration competition",list(LEAGUES),key="v14_cal_league")
+    cal_conf=st.number_input("Audit threshold (%)",35,90,62,1,key="v14_cal_conf")
+    if st.button("RUN CALIBRATION TEST",use_container_width=True,key="run_v14_cal"):
+        with st.spinner("Testing raw vs calibrated probabilities..."):
+            try:
+                ct=v14_calibration_lab(LEAGUES[cal_league]["of"],cal_conf)
+                st.dataframe(ct,hide_index=True,use_container_width=True)
+                if len(ct)==2:
+                    raw=float(ct.iloc[0]["Calibration gap pp"]); new=float(ct.iloc[1]["Calibration gap pp"])
+                    if abs(new)<abs(raw):
+                        st.success(f"Calibration improved: {raw:+.1f}pp → {new:+.1f}pp on later unseen selections.")
+                    else:
+                        st.warning(f"Calibration did not improve: {raw:+.1f}pp → {new:+.1f}pp. V14 will not claim an improvement.")
+            except Exception as e:
+                st.error(f"Calibration test could not complete: {e}")
+
+
+st.markdown("### 💷 V14 Strategy Audit")
+st.caption("Tests the promoted live model on later unseen matches. V14 will not fabricate historical odds: ROI stays disabled until verified historical prices are available in the dataset.")
 with st.expander("Run confidence strategy audit",expanded=False):
-    audit_league=st.selectbox("Strategy competition",list(LEAGUES),key="v13_audit_league")
-    audit_conf=st.number_input("Minimum model confidence (%)",min_value=35,max_value=90,value=62,step=1,key="v13_audit_conf")
-    if st.button("RUN STRATEGY AUDIT",use_container_width=True,key="run_v13_audit"):
+    audit_league=st.selectbox("Strategy competition",list(LEAGUES),key="v14_audit_league")
+    audit_conf=st.number_input("Minimum model confidence (%)",min_value=35,max_value=90,value=62,step=1,key="v14_audit_conf")
+    if st.button("RUN STRATEGY AUDIT",use_container_width=True,key="run_v14_audit"):
         with st.spinner("Replaying unseen predictions..."):
             try:
-                ar=v13_historical_strategy_test(LEAGUES[audit_league]["of"],audit_conf)
+                ar=v14_historical_strategy_test(LEAGUES[audit_league]["of"],audit_conf)
                 if ar["n"]==0:
                     st.warning("No unseen predictions met that confidence threshold.")
                 else:
@@ -582,7 +659,7 @@ with st.expander("Run confidence strategy audit",expanded=False):
                         st.warning(f'Calibration gap: {ar["gap"]:+.1f}pp — monitor before loosening rules.')
                     else:
                         st.error(f'Calibration gap: {ar["gap"]:+.1f}pp — probabilities remain materially miscalibrated at this threshold.')
-                    st.info("Historical ROI / profit / edge: NOT YET VERIFIED. V13 refuses to calculate these without real historical bookmaker odds.")
+                    st.info("Historical ROI / profit / edge: NOT YET VERIFIED. V14 refuses to calculate these without real historical bookmaker odds.")
             except Exception as e:
                 st.error(f"Strategy audit could not complete: {e}")
 
@@ -615,7 +692,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V13 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V14 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -712,7 +789,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
 
-    # V13 dashboard summary
+    # V14 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
@@ -793,13 +870,13 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V13 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V14 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
-<div class="v13-nav">
+<div class="v14-nav">
  <span class="active">🏠<br>Matches</span>
  <span>📊<br>Analysis</span>
- <span>🛡️<br>Engine</span>
+ <span>🎯<br>Calibrate</span>
  <span>⚙️<br>Settings</span>
 </div>
 """, unsafe_allow_html=True)
