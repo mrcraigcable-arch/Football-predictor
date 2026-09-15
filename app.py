@@ -8,11 +8,11 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V11", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V12", page_icon="📈", layout="wide")
 
 
 
-# --- V11 VISUAL SYSTEM: mobile-first neon dashboard ---
+# --- V12 VISUAL SYSTEM: mobile-first neon dashboard ---
 st.markdown("""
 <style>
 :root{
@@ -87,24 +87,24 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 [data-testid="stDataFrame"]{border-radius:16px;overflow:hidden;border:1px solid var(--line)}
 
 /* visual badges reusable from markdown */
-.v11-brand{
+.v12-brand{
  border:1px solid #0b8057;border-radius:18px;padding:16px 18px;margin:4px 0 16px;
  background:linear-gradient(135deg,rgba(0,239,131,.12),rgba(5,29,46,.92) 45%,rgba(10,67,95,.35));
  box-shadow:0 8px 30px rgba(0,0,0,.20)
 }
-.v11-brandline{display:flex;align-items:center;gap:12px}
-.v11-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
-.v11-title{font-size:1.55rem;font-weight:900;line-height:1.05}
-.v11-title b{color:var(--green)}
-.v11-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
-.v11-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
+.v12-brandline{display:flex;align-items:center;gap:12px}
+.v12-logo{font-size:2rem;filter:drop-shadow(0 0 8px rgba(0,239,131,.45))}
+.v12-title{font-size:1.55rem;font-weight:900;line-height:1.05}
+.v12-title b{color:var(--green)}
+.v12-sub{color:#b3c5d6;margin-top:6px;font-size:.9rem}
+.v12-chip{display:inline-block;float:right;border:1px solid #00c86e;border-radius:10px;
  padding:5px 11px;color:#00f18a;font-weight:900;background:#06251b}
-.v11-section{
+.v12-section{
  margin:18px 0 10px;padding:10px 13px;border-left:4px solid var(--cyan);
  background:linear-gradient(90deg,rgba(20,158,255,.13),transparent);
  border-radius:10px;font-weight:850;font-size:1.22rem
 }
-.v11-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
+.v12-key{padding:10px 13px;border-radius:13px;background:#071a29;border:1px solid #173e58;
  margin:8px 0 16px;color:#d9e7f3}
 .green{color:var(--green)} .amber{color:var(--amber)} .red{color:var(--red)} .blue{color:#2b9cff}
 
@@ -114,28 +114,28 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 }
 @media(max-width:699px){
  .block-container{padding-left:.85rem;padding-right:.85rem}
- .v11-title{font-size:1.35rem}
+ .v12-title{font-size:1.35rem}
  h1{font-size:2rem}
  h2{font-size:1.65rem}
  div[data-testid="stMetric"]{min-height:96px}
 }
 
 /* bottom visual nav */
-.v11-nav{
+.v12-nav{
  position:fixed;left:0;right:0;bottom:0;z-index:999;
  display:flex;justify-content:space-around;align-items:center;
  padding:10px 8px calc(10px + env(safe-area-inset-bottom));
  background:rgba(3,17,29,.96);border-top:1px solid #17425e;
  backdrop-filter:blur(14px);box-shadow:0 -8px 25px rgba(0,0,0,.30)
 }
-.v11-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
-.v11-nav .active{color:var(--green);font-weight:800}
+.v12-nav span{color:#9db5c9;font-size:.78rem;text-align:center;min-width:22%}
+.v12-nav .active{color:var(--green);font-weight:800}
 </style>
-<div class="v11-brand">
- <span class="v11-chip">V11</span>
- <div class="v11-brandline"><span class="v11-logo">📈</span>
- <div><div class="v11-title">Craig's Football <b>Predictor</b></div>
- <div class="v11-sub">Data. Discipline. Better decisions. • Real market comparison</div></div></div>
+<div class="v12-brand">
+ <span class="v12-chip">V12</span>
+ <div class="v12-brandline"><span class="v12-logo">📈</span>
+ <div><div class="v12-title">Craig's Football <b>Predictor</b></div>
+ <div class="v12-sub">Data. Discipline. Better decisions. • Real market comparison</div></div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -169,7 +169,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V11</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V12</span></div>
   <div class="brand-sub">Data. Discipline. Better decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -189,7 +189,7 @@ LEAGUES={
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV11/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV12/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -359,7 +359,7 @@ def calibration_grade(gap):
     a=abs(float(gap))
     return "GOOD" if a<=3 else ("WATCH" if a<=6 else "POOR")
 
-st.markdown('<div class="v11-section">🧪 Model validation</div>', unsafe_allow_html=True)
+st.markdown('<div class="v12-section">🧪 Model validation</div>', unsafe_allow_html=True)
 with st.expander("Run chronological backtest",expanded=False):
     st.caption("Train on the earlier 80% of historical matches and test only on the later unseen 20%.")
     bt_league=st.selectbox("Backtest competition",list(LEAGUES),key="bt_league")
@@ -380,6 +380,126 @@ with st.expander("Run chronological backtest",expanded=False):
                 else: st.warning("No confidence band yet combines a strong sample with tight calibration. Do not loosen BET rules from this result.")
             except Exception as e:
                 st.error(f"Backtest could not complete: {e}")
+
+
+
+# =========================
+# V12 MODEL LAB
+# =========================
+def _fit_candidate(train, model_name):
+    X=train[FEATURES].fillna(0)
+    y=train["y"]
+    if model_name=="Current V11":
+        m=HistGradientBoostingClassifier(max_iter=180,max_leaf_nodes=15,l2_regularization=2,random_state=42)
+    elif model_name=="Regularised":
+        m=HistGradientBoostingClassifier(max_iter=130,max_leaf_nodes=9,learning_rate=.055,
+                                         min_samples_leaf=28,l2_regularization=5,random_state=42)
+    else:  # Conservative
+        m=HistGradientBoostingClassifier(max_iter=100,max_leaf_nodes=7,learning_rate=.045,
+                                         min_samples_leaf=38,l2_regularization=8,random_state=42)
+    m.fit(X,y)
+    return m
+
+def _score_block(model,test):
+    proba=model.predict_proba(test[FEATURES].fillna(0))
+    actual=test["y"].to_numpy()
+    pred=np.argmax(proba,axis=1)
+    conf=np.max(proba,axis=1)
+    correct=(pred==actual)
+    onehot=np.eye(3)[actual]
+    brier=float(np.mean(np.sum((proba-onehot)**2,axis=1)))
+    return {
+        "n":len(test),
+        "accuracy":float(correct.mean()),
+        "logloss":float(log_loss(actual,proba,labels=[0,1,2])),
+        "brier":brier,
+        "confidence":float(conf.mean()),
+        "cal_gap":float((conf.mean()-correct.mean())*100),
+    }
+
+@st.cache_data(ttl=3600,show_spinner=False)
+def walk_forward_model_lab(code):
+    """Expanding-window validation: every test block is later than its training data."""
+    f,_,_,_=make_training(code)
+    f=f.reset_index(drop=True)
+    if len(f)<900:
+        raise RuntimeError("Not enough historical matches for walk-forward testing.")
+
+    # Keep the earliest 55% as the initial training window; evaluate the rest
+    # in five chronological blocks. This prevents future matches leaking backward.
+    start=int(len(f)*.55)
+    remaining=len(f)-start
+    block=max(80,remaining//5)
+    models=["Current V11","Regularised","Conservative"]
+    agg={m:[] for m in models}
+    fold_rows=[]
+
+    fold=0
+    test_start=start
+    while test_start < len(f):
+        test_end=min(len(f),test_start+block)
+        if test_end-test_start < 35:
+            break
+        train=f.iloc[:test_start].copy()
+        test=f.iloc[test_start:test_end].copy()
+        fold+=1
+        for name in models:
+            model=_fit_candidate(train,name)
+            sc=_score_block(model,test)
+            agg[name].append(sc)
+            fold_rows.append({
+                "Fold":fold,"Model":name,"Train matches":len(train),"Test matches":sc["n"],
+                "Accuracy %":round(sc["accuracy"]*100,1),
+                "Log loss":round(sc["logloss"],3),
+                "Brier":round(sc["brier"],3),
+                "Avg confidence %":round(sc["confidence"]*100,1),
+                "Overconfidence pp":round(sc["cal_gap"],1),
+            })
+        test_start=test_end
+
+    summary=[]
+    for name,vals in agg.items():
+        if not vals: continue
+        total=sum(x["n"] for x in vals)
+        def wavg(k): return sum(x[k]*x["n"] for x in vals)/total
+        summary.append({
+            "Model":name,
+            "Test matches":total,
+            "Accuracy %":round(wavg("accuracy")*100,1),
+            "Log loss":round(wavg("logloss"),3),
+            "Brier":round(wavg("brier"),3),
+            "Avg confidence %":round(wavg("confidence")*100,1),
+            "Overconfidence pp":round(wavg("cal_gap"),1),
+        })
+    summary=pd.DataFrame(summary).sort_values(["Log loss","Brier"],ascending=True).reset_index(drop=True)
+    folds=pd.DataFrame(fold_rows)
+    return summary,folds
+
+st.markdown('<div class="v12-section">🧠 V12 Model Lab</div>',unsafe_allow_html=True)
+with st.expander("Walk-forward model comparison",expanded=False):
+    st.caption("V12 repeatedly trains only on the past and predicts the next chronological block. Three model configurations compete on exactly the same unseen matches.")
+    lab_league=st.selectbox("Model Lab competition",list(LEAGUES),key="v12_lab_league")
+    if st.button("RUN V12 MODEL LAB",use_container_width=True,key="run_v12_lab"):
+        with st.spinner("Running expanding-window model comparison..."):
+            try:
+                summary,folds=walk_forward_model_lab(LEAGUES[lab_league]["of"])
+                winner=summary.iloc[0]
+                st.markdown("#### 🏆 Unseen-data leaderboard")
+                st.dataframe(summary,hide_index=True,use_container_width=True)
+                c1,c2,c3=st.columns(3)
+                c1.metric("Best model",winner["Model"])
+                c2.metric("Best log loss",f'{winner["Log loss"]:.3f}')
+                c3.metric("Best Brier",f'{winner["Brier"]:.3f}')
+                current=summary[summary["Model"]=="Current V11"].iloc[0]
+                if winner["Model"]!="Current V11" and winner["Log loss"] < current["Log loss"]:
+                    improvement=(current["Log loss"]-winner["Log loss"])/current["Log loss"]*100
+                    st.success(f'{winner["Model"]} beats the V11 configuration on unseen log loss by {improvement:.1f}%. This is evidence for promotion, not an automatic live-model switch.')
+                else:
+                    st.warning("The V11 configuration was not convincingly beaten. V12 will not promote extra complexity just because it is newer.")
+                with st.expander("See every chronological fold"):
+                    st.dataframe(folds,hide_index=True,use_container_width=True)
+            except Exception as e:
+                st.error(f"V12 Model Lab could not complete: {e}")
 
 
 st.subheader("🔐 Live data connection")
@@ -410,7 +530,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V11 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V12 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -507,7 +627,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
 
-    # V11 dashboard summary
+    # V12 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
@@ -588,13 +708,13 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V11 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V12 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
-<div class="v11-nav">
+<div class="v12-nav">
  <span class="active">🏠<br>Matches</span>
  <span>📊<br>Analysis</span>
- <span>🧪<br>Validation</span>
+ <span>🧠<br>Model Lab</span>
  <span>⚙️<br>Settings</span>
 </div>
 """, unsafe_allow_html=True)
