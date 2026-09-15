@@ -349,21 +349,41 @@ def team_match(a,b):
 
 @st.cache_data(ttl=300,show_spinner=False)
 def odds_fetch(api_key,sport_key):
+    # V15.4: preserve the actual HTTP/API response diagnostics. Never expose apiKey.
     url=f"{ODDS_BASE}/{sport_key}/odds/"
-    r=requests.get(url,params={"apiKey":api_key,"regions":"uk","markets":"h2h",
-                              "oddsFormat":"decimal","dateFormat":"iso"},timeout=25)
-    if r.status_code in (401,403):
-        raise RuntimeError("Odds API key was rejected.")
-    if r.status_code==429:
-        raise RuntimeError("Odds API monthly request allowance has been reached.")
-    r.raise_for_status()
-    data=r.json()
-    return data, {
+    safe_params={"regions":"uk","markets":"h2h","oddsFormat":"decimal","dateFormat":"iso"}
+    params={"apiKey":api_key,**safe_params}
+    r=requests.get(url,params=params,timeout=25)
+    meta={
+        "endpoint":f"/v4/sports/{sport_key}/odds/",
+        "sport_key":sport_key,
+        "region":"uk",
+        "market":"h2h",
+        "http_status":r.status_code,
         "remaining":r.headers.get("x-requests-remaining"),
         "used":r.headers.get("x-requests-used"),
         "last":r.headers.get("x-requests-last"),
-        "events":len(data) if isinstance(data,list) else 0
+        "events":0,
+        "api_message":"",
     }
+    try:
+        payload=r.json()
+    except Exception:
+        payload=None
+        meta["api_message"]=(r.text or "")[:300]
+    if isinstance(payload,dict):
+        meta["api_message"]=str(payload.get("message") or payload.get("error") or payload.get("code") or "")[:300]
+    if r.status_code in (401,403):
+        raise RuntimeError(f"Odds API key rejected (HTTP {r.status_code}).")
+    if r.status_code==429:
+        raise RuntimeError("Odds API usage allowance reached (HTTP 429).")
+    if r.status_code>=400:
+        raise RuntimeError(f"Odds API HTTP {r.status_code}: {meta['api_message'] or 'request failed'}")
+    data=payload if isinstance(payload,list) else []
+    meta["events"]=len(data)
+    if not isinstance(payload,list) and not meta["api_message"]:
+        meta["api_message"]="Unexpected non-list response from odds endpoint"
+    return data,meta
 
 def _event_date_utc(e):
     try:
@@ -796,7 +816,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15.3 visible market-diagnostics engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15.4 API-response diagnostics engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -851,7 +871,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
                 i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
-                market,matchdiag=consensus_for(odds_events,h,a,day) if odds_events else (None,{"stage":"no-events","reason":"No odds events returned","trace":[],"rejected_books":[]})
+                market,matchdiag=consensus_for(odds_events,h,a,day) if odds_events else (None,{"stage":"no-events","reason":"Odds endpoint returned zero current/live events for this league","trace":[],"rejected_books":[],"api": (oddiag if odds_key and 'oddiag' in locals() else {})})
+                if isinstance(matchdiag,dict) and odds_key:
+                    matchdiag.setdefault("api", odddiag if 'oddiag' in locals() else {})
                 if odds_key:
                     diagnostics.append({"League":lname,"Sport key":meta["odds"],
                                         "API events returned":"","Credits used":"",
@@ -986,6 +1008,19 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 st.write(f'**Final rejection reason:** {md.get("reason", "No reason recorded")}')
                 trace = md.get("trace", []) or []
                 st.write(f'**Odds API candidates inspected:** {len(trace)}')
+                api = md.get("api", {}) or {}
+                if api:
+                    st.markdown("#### Odds API response")
+                    st.write(f'**Sport key:** `{api.get("sport_key", "unknown")}`')
+                    st.write(f'**Endpoint:** `{api.get("endpoint", "unknown")}`')
+                    st.write(f'**Request:** region `{api.get("region", "uk")}` · market `{api.get("market", "h2h")}`')
+                    st.write(f'**HTTP status:** {api.get("http_status", "unknown")}')
+                    st.write(f'**Events returned:** {api.get("events", "unknown")}')
+                    st.write(f'**Quota:** used {api.get("used", "?")} · remaining {api.get("remaining", "?")} · last call cost {api.get("last", "?")}')
+                    if api.get("api_message"):
+                        st.write(f'**API message:** {api.get("api_message")}')
+                    if api.get("http_status") == 200 and api.get("events") == 0:
+                        st.info("The API request itself succeeded, but it returned no current/live odds events for this league. Completed matches are not returned by the current /odds endpoint; this is not a team-name matching failure.")
                 if trace:
                     rows=[]
                     for t in trace:
