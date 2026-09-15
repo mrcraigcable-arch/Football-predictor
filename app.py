@@ -313,13 +313,20 @@ ODDS_BASE="https://api.the-odds-api.com/v4/sports"
 def norm(s):
     import re, unicodedata
     s=unicodedata.normalize("NFKD",str(s)).encode("ascii","ignore").decode().lower()
-    s=re.sub(r"\b(fc|cf|afc|ac|calcio|club|de|madrid)\b"," ",s)
+    # Keep meaningful location/name tokens. Only remove generic football suffixes.
+    s=re.sub(r"\b(fc|cf|afc|ac|calcio|club)\b"," ",s)
     return re.sub(r"[^a-z0-9]","",s)
 
 def team_match(a,b):
+    """Conservative team-name match. Never use a short/loose match for money data."""
     x,y=norm(a),norm(b)
-    return x==y or (len(x)>=5 and x in y) or (len(y)>=5 and y in x)
+    if not x or not y: return False
+    if x==y: return True
+    # Permit common long-form suffix/prefix variants only when the shorter normalized
+    # name is substantial. This handles e.g. Rayo Vallecano vs Rayo Vallecano de Madrid.
+    return min(len(x),len(y))>=8 and (x.startswith(y) or y.startswith(x))
 
+@st.cache_data(ttl=300,show_spinner=False)
 def odds_fetch(api_key,sport_key):
     url=f"{ODDS_BASE}/{sport_key}/odds/"
     r=requests.get(url,params={"apiKey":api_key,"regions":"uk","markets":"h2h",
@@ -337,30 +344,79 @@ def odds_fetch(api_key,sport_key):
         "events":len(data) if isinstance(data,list) else 0
     }
 
-def consensus_for(events,home,away):
-    event=None
+def _event_date_utc(e):
+    try:
+        return pd.to_datetime(e.get("commence_time"),utc=True).date()
+    except Exception:
+        return None
+
+def consensus_for(events,home,away,fixture_date=None):
+    """Fail-closed UK soccer 1X2 consensus.
+
+    Integrity rules:
+    * event must match BOTH teams and (when supplied) the fixture date;
+    * market key must be exactly h2h (never h2h_lay/totals/etc.);
+    * each bookmaker must expose exactly one named home, draw and away outcome;
+    * prices and the three-way overround must be plausible;
+    * consensus fair probabilities are built per bookmaker then medianed;
+    * EV uses the best verified execution price, not the consensus median.
+    """
+    candidates=[]
     for e in events:
-        if team_match(home,e.get("home_team","")) and team_match(away,e.get("away_team","")):
-            event=e; break
-    if not event: return None
-    books=[]
+        if not (team_match(home,e.get("home_team","")) and team_match(away,e.get("away_team",""))):
+            continue
+        if fixture_date is not None:
+            ed=_event_date_utc(e)
+            # UTC can cross a local midnight; allow one day either side, but never an unrelated event.
+            if ed is None or abs((ed-fixture_date).days)>1:
+                continue
+        candidates.append(e)
+    if len(candidates)!=1:
+        return None
+    event=candidates[0]
+
+    valid=[]; rejected=[]
     for b in event.get("bookmakers",[]):
-        for m in b.get("markets",[]):
-            if m.get("key")!="h2h": continue
-            vals={}
-            for o in m.get("outcomes",[]):
-                n=o.get("name",""); p=o.get("price")
-                if not isinstance(p,(int,float)) or p<=1: continue
-                if n=="Draw": vals["D"]=float(p)
-                elif team_match(home,n): vals["H"]=float(p)
-                elif team_match(away,n): vals["A"]=float(p)
-            if all(k in vals for k in ("H","D","A")):
-                books.append((vals["H"],vals["D"],vals["A"],b.get("title","")))
-    if not books: return None
-    arr=np.array([x[:3] for x in books],dtype=float)
-    med=np.median(arr,axis=0)
-    inv=1/med; fair=inv/inv.sum()
-    return med,fair,len(books)
+        title=b.get("title",b.get("key","Unknown"))
+        h2h=[m for m in b.get("markets",[]) if m.get("key")=="h2h"]
+        if len(h2h)!=1:
+            rejected.append((title,"missing/duplicate h2h")); continue
+        vals={"H":[],"D":[],"A":[]}
+        for o in h2h[0].get("outcomes",[]):
+            n=str(o.get("name","")).strip(); p=o.get("price")
+            if not isinstance(p,(int,float)) or not np.isfinite(p) or p<=1.01 or p>100:
+                continue
+            if n.casefold()=="draw": vals["D"].append(float(p))
+            elif team_match(home,n): vals["H"].append(float(p))
+            elif team_match(away,n): vals["A"].append(float(p))
+        if any(len(vals[k])!=1 for k in ("H","D","A")):
+            rejected.append((title,"could not uniquely map H/D/A")); continue
+        prices=np.array([vals["H"][0],vals["D"][0],vals["A"][0]],dtype=float)
+        overround=float((1/prices).sum())
+        # Ordinary 1X2 books should cluster around 100%; reject corrupted/wrong-market triples.
+        if not (0.95 <= overround <= 1.20):
+            rejected.append((title,f"implausible 1X2 overround {overround:.3f}")); continue
+        fair=(1/prices)/overround
+        valid.append({"book":title,"prices":prices,"fair":fair,"overround":overround})
+
+    if not valid:
+        return None
+    arr=np.vstack([v["prices"] for v in valid])
+    fairs=np.vstack([v["fair"] for v in valid])
+    median_prices=np.median(arr,axis=0)
+    fair=np.median(fairs,axis=0); fair=fair/fair.sum()
+    best_prices=np.max(arr,axis=0)
+
+    # Cross-book integrity check. A single bad feed cannot create a BET.
+    q25=np.percentile(arr,25,axis=0); q75=np.percentile(arr,75,axis=0)
+    dispersion=np.max((q75-q25)/np.maximum(median_prices,1e-9))
+    integrity="OK" if dispersion<=0.35 else "VERIFY"
+    detail=[{"Bookmaker":v["book"],"Home":round(v["prices"][0],3),
+             "Draw":round(v["prices"][1],3),"Away":round(v["prices"][2],3),
+             "Overround %":round(v["overround"]*100,1)} for v in valid]
+    return {"median":median_prices,"fair":fair,"best":best_prices,"books":len(valid),
+            "integrity":integrity,"detail":detail,"event":event,
+            "rejected":rejected}
 
 
 @st.cache_data(ttl=3600,show_spinner=False)
@@ -697,7 +753,7 @@ with st.expander("Run confidence strategy audit",expanded=False):
                 st.error(f"Strategy audit could not complete: {e}")
 
 
-st.markdown("### 🧭 V15 League-Validated Engine")
+st.markdown("### 🧭 V15.1 Market-Integrity Fix")
 st.caption("The live predictor now chooses the probability engine per competition from V14 unseen-data evidence. It never applies calibration globally.")
 with st.expander("View league engine policy",expanded=False):
     policy_rows=[]
@@ -733,7 +789,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15 league-aware safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15.1 league-aware safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -788,22 +844,25 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
                 i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
-                market=consensus_for(odds_events,h,a) if odds_events else None
+                market=consensus_for(odds_events,h,a,day) if odds_events else None
                 if odds_key:
                     diagnostics.append({"League":lname,"Sport key":meta["odds"],
                                         "API events returned":"","Credits used":"",
                                         "Credits remaining":"",
                                         "Status":f'FIXTURE MATCH {"YES" if market else "NO"}: {h} v {a}'})
-                odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
+                odd=np.nan; best_odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
                 if market:
-                    med,mfair,books=market
-                    odd=float(med[i]); mprob=float(mfair[i])
+                    med,mfair,books=market["median"],market["fair"],market["books"]
+                    # Display consensus price; calculate EV at the best verified UK price.
+                    odd=float(med[i]); best_odd=float(market["best"][i]); mprob=float(mfair[i])
                     edge=conf-mprob
-                    ev=conf*odd-1
+                    ev=conf*best_odd-1
                 if not market:
                     # No market data means there is not enough evidence to make a betting
                     # decision at all. Keep this blue regardless of model confidence.
                     decision="PREDICTION ONLY"
+                elif market.get("integrity")!="OK":
+                    decision="VERIFY"
                 elif books < min_books:
                     decision="VERIFY"
                 elif edge > max_edge/100:
@@ -821,6 +880,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Edge pp":round(edge*100,1) if np.isfinite(edge) else None,
                             "EV %":round(ev*100,1) if np.isfinite(ev) else None,
                             "Bookmakers":books if books else None,
+                            "Best market odds":round(best_odd,2) if market and np.isfinite(best_odd) else None,
+                            "Market integrity":market.get("integrity") if market else None,
+                            "Bookmaker detail":market.get("detail",[]) if market else [],
                             "Decision":decision,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence})
@@ -881,6 +943,11 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             c1,c2=st.columns(2)
             c1.metric("Model fair odds",fmt(r["Fair odds"]))
             c2.metric("Market odds",fmt(r["Market odds"]))
+            if pd.notna(r.get("Best market odds")):
+                st.caption(f'Best verified UK price for EV: {r["Best market odds"]:.2f} • Market integrity: {r.get("Market integrity","—")}')
+            if r.get("Bookmaker detail"):
+                with st.expander("Bookmaker 1X2 audit"):
+                    st.dataframe(pd.DataFrame(r["Bookmaker detail"]),use_container_width=True,hide_index=True)
             c1,c2=st.columns(2)
             c1.metric("Market fair %",fmt(r["Market fair %"],"%"))
             c2.metric("Bookmakers",fmt(r["Bookmakers"]))
@@ -915,7 +982,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V15 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V15.1 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
 <div class="v14-nav">
