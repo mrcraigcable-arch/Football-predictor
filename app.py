@@ -816,7 +816,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15.4.3 API-response diagnostics engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15.5 decision-engine correction: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -895,20 +895,33 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     odd=float(med[i]); best_odd=float(market["best"][i]); mprob=float(mfair[i])
                     edge=conf-mprob
                     ev=conf*best_odd-1
+                # V15.5 decision hierarchy: first establish whether this is even a
+                # positive betting candidate. VERIFY is reserved for otherwise-qualifying
+                # candidates whose market evidence needs manual checking.
                 if not market:
-                    # No market data means there is not enough evidence to make a betting
-                    # decision at all. Keep this blue regardless of model confidence.
                     decision="PREDICTION ONLY"
+                    decision_reason="No matched current market."
+                elif conf < min_conf/100:
+                    decision="PASS"
+                    decision_reason=f"Model confidence {conf*100:.1f}% is below the {min_conf:.0f}% threshold."
+                elif edge < min_edge/100:
+                    decision="PASS"
+                    decision_reason=f"Market edge {edge*100:.1f}pp is below the +{min_edge:.0f}pp threshold."
+                elif ev <= 0:
+                    decision="PASS"
+                    decision_reason=f"Model EV is not positive ({ev*100:.1f}%)."
                 elif market.get("integrity")!="OK":
                     decision="VERIFY"
+                    decision_reason="Positive candidate, but bookmaker-price dispersion failed the market-integrity guard."
                 elif books < min_books:
                     decision="VERIFY"
+                    decision_reason=f"Positive candidate, but only {books} bookmakers passed validation (minimum {min_books})."
                 elif edge > max_edge/100:
                     decision="VERIFY"
-                elif conf>=min_conf/100 and edge>=min_edge/100 and ev>0:
-                    decision="BET"
+                    decision_reason=f"Positive candidate, but the {edge*100:.1f}pp edge exceeds the {max_edge:.0f}pp manual-verification ceiling."
                 else:
-                    decision="PASS"
+                    decision="BET"
+                    decision_reason="Clears confidence, edge, positive-EV, bookmaker-depth and market-integrity rules."
                 out.append({"League":lname,"Match":f"{h} v {a}","Pick":labels[i],
                             "Home %":round(pr[0]*100,1),"Draw %":round(pr[1]*100,1),
                             "Away %":round(pr[2]*100,1),"Confidence %":round(conf*100,1),
@@ -922,7 +935,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Market integrity":market.get("integrity") if market else None,
                             "Bookmaker detail":market.get("detail",[]) if market else [],
                             "Market diagnostic":matchdiag,
-                            "Decision":decision,"Training matches":ntrain,
+                            "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence})
     if warnings:
@@ -994,9 +1007,11 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             c1.metric("Edge",fmt(r["Edge pp"]," pp"))
             c2.metric("Model EV",fmt(r["EV %"],"%"))
             if r["Decision"]=="VERIFY":
-                st.warning("Manual verification required: the market disagreement is unusually large or bookmaker coverage is too thin. This is deliberately NOT labelled BET.")
+                st.warning(f'🟠 VERIFY — {r.get("Decision reason", "Manual market verification required.")} This is deliberately NOT labelled BET.')
             elif r["Decision"]=="BET":
-                st.success("Clears the current confidence, market-edge, bookmaker-count and positive-EV rules.")
+                st.success(f'🟢 BET — {r.get("Decision reason", "Clears all current betting rules.")}')
+            elif r["Decision"]=="PASS":
+                st.error(f'🔴 PASS — {r.get("Decision reason", "Does not clear the betting rules.")}')
             elif pd.isna(r["Market odds"]):
                 st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
 
