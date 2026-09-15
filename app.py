@@ -1082,7 +1082,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V16.5.2 • SIMPLE MATCH OVERVIEW — BET signals are frozen at first classification; later checks update price movement without rewriting the original signal.")
+st.info("V16.6 • SIMPLE MATCH OVERVIEW — BET signals are frozen at first classification; later checks update price movement without rewriting the original signal.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1250,10 +1250,25 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             else:
                 st.warning("No odds diagnostics were produced.")
 
-    st.subheader("🏁 Ranked match board")
-    st.caption("Selections are grouped by final grade, then ranked strongest → weakest inside that grade. PASS rankings mean closest to qualifying — they are not betting recommendations.")
+    st.subheader("⭐ Top Picks Today")
+    st.caption("Win chance and betting value are deliberately separated. ⭐ means a strong model win prediction — it does not mean the price qualifies as a value bet.")
 
-    st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 BET &nbsp; 🟠 VERIFY &nbsp; 🔴 PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
+    # V16.6 presentation-only strong-win board. It never changes the underlying BET/VERIFY/PASS decision.
+    strong=d[(d["Confidence %"] >= 68.0) & (d["Decision"] != "BET")].copy()
+    if not strong.empty:
+        strong=strong.sort_values("Confidence %",ascending=False).head(8)
+        for n,(_,sr) in enumerate(strong.iterrows(),start=1):
+            market_note="market unavailable" if pd.isna(sr.get("Market fair %")) else f'market {sr.get("Market fair %"):.0f}%'
+            val=str(sr.get("Validation",""))
+            guard=" • ⚠️ raw model" if "RAW" in val.upper() else ""
+            st.markdown(f'**⭐ #{n} {sr["Match"]} — {sr["Pick"]} {sr["Confidence %"]:.0f}%**  ·  {market_note}{guard}')
+    else:
+        st.info("No non-green selections reach the 68% strong-win threshold today.")
+
+    st.subheader("🏁 Ranked match board")
+    st.caption("🟢 is reserved for verified value bets. ⭐ strong-win chances are high-probability predictions and remain separate from betting value.")
+
+    st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 VALUE BET &nbsp; ⭐ STRONG WIN CHANCE &nbsp; 🟠 VALUE WATCH &nbsp; 🔴 AVOID/PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
     st.caption("🇬🇧 Odds are displayed as UK fractions. Decimal odds remain under the hood for probability, edge, EV and validation calculations.")
 
     def decimal_to_fractional(v, max_denominator=100):
@@ -1439,9 +1454,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 st.caption("Fail-closed: this fixture cannot become BET until a unique event and valid named Home/Draw/Away h2h prices pass every integrity check.")
 
     groups=[
-        ("BET","🟢 BET — strongest to weakest","Clears every automatic betting rule. Ranked by value signal, confidence and market depth.",True),
-        ("VERIFY","🟠 VERIFY — strongest to weakest","Potential value, but at least one safety check requires manual verification.",False),
-        ("PASS","🔴 PASS — closest to qualifying to weakest","Ranked by proximity to the betting gates. These remain PASS selections — ranking does not turn them into bets.",False),
+        ("BET","🟢 VALUE BET — strongest to weakest","Clears every automatic betting rule. Ranked by value signal, confidence and market depth.",True),
+        ("VERIFY","🟠 VALUE WATCH — strongest to weakest","Potential value, but at least one safety check prevents a green value-bet classification.",False),
+        ("PASS","🔴 AVOID / PASS — closest to qualifying to weakest","Does not clear the value-bet gates. Ranked only to show which came closest.",False),
         ("PREDICTION ONLY","🔵 PREDICTION ONLY — strongest to weakest","No trusted current market decision. Ranked only by model confidence.",False),
     ]
     for decision,title,help_text,open_default in groups:
