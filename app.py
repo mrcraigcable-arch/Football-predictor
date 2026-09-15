@@ -1167,7 +1167,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     odd=float(med[i]); best_odd=float(market["best"][i]); mprob=float(mfair[i])
                     edge=conf-mprob
                     ev=conf*best_odd-1
-                context = fixture_context(code, fixture_date, h, a)
+                context = fixture_context(code, day, h, a)
                 secondary_checks=[]
                 # V16.5 decision hierarchy: establish whether this is a positive betting candidate,
                 # then automatically investigate unusually large edges instead of handing work to the user. VERIFY is reserved for otherwise-qualifying
