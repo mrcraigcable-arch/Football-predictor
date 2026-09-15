@@ -8,7 +8,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V14", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V15", page_icon="📈", layout="wide")
 
 
 
@@ -132,7 +132,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V14</span>
+ <span class="v14-chip">V15</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -169,7 +169,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V14</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V15</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -185,11 +185,23 @@ LEAGUES={
     "Serie A":{"of":"it.1","odds":"soccer_italy_serie_a"},
     "Ligue 1":{"of":"fr.1","odds":"soccer_france_ligue_one"},
 }
+
+# V15 league-aware promotion policy. These choices are based on the V14
+# chronological unseen-data calibration tests at the 62% audit threshold.
+# No league is allowed to inherit another league's calibration result.
+V15_POLICY={
+    "Premier League":{"engine":"calibrated","status":"APPROVED","evidence":"V14 gap +6.1pp → +2.1pp"},
+    "Championship":{"engine":"raw","status":"RAW FALLBACK","evidence":"V14 calibrated validation unavailable"},
+    "Bundesliga":{"engine":"calibrated","status":"APPROVED","evidence":"V14 gap +3.4pp → -1.5pp"},
+    "La Liga":{"engine":"raw","status":"APPROVED RAW","evidence":"Raw gap -0.7pp; calibration worsened to -11.7pp"},
+    "Serie A":{"engine":"raw","status":"APPROVED RAW","evidence":"Calibration improvement too small for 56% fewer selections"},
+    "Ligue 1":{"engine":"raw","status":"APPROVED RAW","evidence":"Raw gap -2.1pp; calibration worsened to -9.9pp"},
+}
 # Only leagues actually present in OpenFootball's 2026/27 JSON repository are exposed.
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
 FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV14/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV15/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -254,21 +266,42 @@ def make_training(code,w=8):
     return pd.DataFrame(rows),hist,elo,used
 
 @st.cache_resource(show_spinner=False)
-def train(code):
+def train(lname,code):
+    """V15 live engine: conservative model with league-specific calibration policy."""
     f,hist,elo,used=make_training(code)
-    if len(f)<120: raise RuntimeError(f"Only {len(f)} completed historical matches available.")
+    if len(f)<120:
+        raise RuntimeError(f"Only {len(f)} completed historical matches available.")
     X=f[FEATURES].fillna(0); y=f["y"]
-    cut=int(len(X)*.8)
-    base=HistGradientBoostingClassifier(max_iter=100,max_leaf_nodes=7,learning_rate=.045,min_samples_leaf=38,l2_regularization=8,random_state=42)
-    base.fit(X.iloc[:cut],y.iloc[:cut])
-    model=base
-    if len(X)-cut>=50 and y.iloc[cut:].nunique()==3:
-        try:
-            cal=CalibratedClassifierCV(base,method="sigmoid",cv="prefit")
-            cal.fit(X.iloc[cut:],y.iloc[cut:])
-            model=cal
-        except Exception: pass
-    return model,hist,elo,used
+    policy=V15_POLICY[lname]
+
+    def conservative():
+        return HistGradientBoostingClassifier(
+            max_iter=100,max_leaf_nodes=7,learning_rate=.045,
+            min_samples_leaf=38,l2_regularization=8,random_state=42)
+
+    if policy["engine"]=="calibrated":
+        # Strict chronology: base model sees the earlier 82%; sigmoid calibrator
+        # sees only the later 18%. No future fixture/result enters either stage.
+        cut=max(250,int(len(f)*.82))
+        proper=f.iloc[:cut]; cal=f.iloc[cut:]
+        base=conservative()
+        base.fit(proper[FEATURES].fillna(0),proper["y"])
+        model=base
+        if len(cal)>=50 and cal["y"].nunique()==3:
+            try:
+                calibrated=CalibratedClassifierCV(base,method="sigmoid",cv="prefit")
+                calibrated.fit(cal[FEATURES].fillna(0),cal["y"])
+                model=calibrated
+            except Exception:
+                # Fail closed to raw rather than pretending calibration succeeded.
+                model=base
+        engine_label="V15 CALIBRATED CONSERVATIVE" if model is not base else "V15 RAW SAFETY FALLBACK"
+    else:
+        model=conservative()
+        model.fit(X,y)
+        engine_label="V15 RAW CONSERVATIVE"
+
+    return model,hist,elo,used,engine_label,policy["status"],policy["evidence"]
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def fixtures_for(code):
@@ -482,7 +515,7 @@ border-radius:20px;padding:18px;margin:12px 0 18px 0;">
 <div style="font-size:13px;color:#77f7c7;font-weight:800;letter-spacing:.08em;">LIVE ENGINE</div>
 <div style="font-size:26px;font-weight:900;color:white;margin-top:4px;">🎯 Calibrated Conservative live</div>
 <div style="color:#b9c7d5;margin-top:8px;line-height:1.5;">
-Conservative won all 6 unseen-data league tests. V14 retains that engine and adds a chronological sigmoid-calibration layer so displayed probabilities are tested for reliability before we trust them.
+V15 promotes only the league-specific probability treatment supported by V14 unseen-data tests: calibrated Conservative for Premier League and Bundesliga; raw Conservative for La Liga, Serie A and Ligue 1; Championship remains a raw safety fallback until calibration is validated.
 </div>
 </div>
 """,unsafe_allow_html=True)
@@ -491,7 +524,7 @@ st.markdown('<div class="v14-section">🧠 V14 Model Lab</div>',unsafe_allow_htm
 with st.expander("Walk-forward model comparison",expanded=False):
     st.caption("V14 repeatedly trains only on the past and predicts the next chronological block. Three model configurations compete on exactly the same unseen matches.")
     lab_league=st.selectbox("Model Lab competition",list(LEAGUES),key="v14_lab_league")
-    if st.button("RUN V14 MODEL LAB",use_container_width=True,key="run_v14_lab"):
+    if st.button("RUN V15 MODEL LAB",use_container_width=True,key="run_v14_lab"):
         with st.spinner("Running expanding-window model comparison..."):
             try:
                 summary,folds=walk_forward_model_lab(LEAGUES[lab_league]["of"])
@@ -617,7 +650,7 @@ def v14_calibration_lab(code,min_conf_pct):
                         "Calibration gap pp":round((q["confidence"].mean()-q["correct"].mean())*100,1)})
     return pd.DataFrame(out)
 
-st.markdown("### 🎯 V14 Probability Calibration")
+st.markdown("### 🎯 V15 Validation Lab — V14 Evidence")
 st.caption("V14 learns its probability correction only from earlier matches, then tests the corrected probabilities on later unseen matches.")
 with st.expander("Run calibration comparison",expanded=False):
     cal_league=st.selectbox("Calibration competition",list(LEAGUES),key="v14_cal_league")
@@ -637,7 +670,7 @@ with st.expander("Run calibration comparison",expanded=False):
                 st.error(f"Calibration test could not complete: {e}")
 
 
-st.markdown("### 💷 V14 Strategy Audit")
+st.markdown("### 💷 V15 Strategy Audit")
 st.caption("Tests the promoted live model on later unseen matches. V14 will not fabricate historical odds: ROI stays disabled until verified historical prices are available in the dataset.")
 with st.expander("Run confidence strategy audit",expanded=False):
     audit_league=st.selectbox("Strategy competition",list(LEAGUES),key="v14_audit_league")
@@ -663,6 +696,14 @@ with st.expander("Run confidence strategy audit",expanded=False):
             except Exception as e:
                 st.error(f"Strategy audit could not complete: {e}")
 
+
+st.markdown("### 🧭 V15 League-Validated Engine")
+st.caption("The live predictor now chooses the probability engine per competition from V14 unseen-data evidence. It never applies calibration globally.")
+with st.expander("View league engine policy",expanded=False):
+    policy_rows=[]
+    for _league,_p in V15_POLICY.items():
+        policy_rows.append({"Competition":_league,"Live engine":"Calibrated Conservative" if _p["engine"]=="calibrated" else "Raw Conservative","Status":_p["status"],"Evidence":_p["evidence"]})
+    st.dataframe(pd.DataFrame(policy_rows),hide_index=True,use_container_width=True)
 
 st.subheader("🔐 Live data connection")
 entered=st.text_input("The Odds API key",value=st.session_state.get("odds_key",""),
@@ -692,7 +733,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V14 safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15 league-aware safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -732,7 +773,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             games=[m for m in matches if str(m.get("date",""))[:10]==day.isoformat()]
             if not games: continue
             try:
-                model,hist,elo,ntrain=train(code)
+                model,hist,elo,ntrain,engine_label,validation_status,validation_evidence=train(lname,code)
             except Exception as e:
                 warnings.append(f"{lname}: model unavailable ({e})")
                 continue
@@ -780,7 +821,9 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                             "Edge pp":round(edge*100,1) if np.isfinite(edge) else None,
                             "EV %":round(ev*100,1) if np.isfinite(ev) else None,
                             "Bookmakers":books if books else None,
-                            "Decision":decision,"Training matches":ntrain})
+                            "Decision":decision,"Training matches":ntrain,
+                            "Model engine":engine_label,"Validation":validation_status,
+                            "Validation evidence":validation_evidence})
     if warnings:
         with st.expander("Data/model warnings"):
             for w in warnings: st.warning(w)
@@ -789,7 +832,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
 
-    # V14 dashboard summary
+    # V15 dashboard summary
     bet_count=int((d.Decision=="BET").sum())
     verify_count=int((d.Decision=="VERIFY").sum())
     pass_count=int((d.Decision=="PASS").sum())
@@ -829,6 +872,8 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         icon={"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
         with st.expander(f'{icon} {r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}%', expanded=expanded):
             st.caption(f'{r["League"]}  •  Decision: {r["Decision"]}')
+            st.markdown(f'**🧠 {r["Model engine"]}**  ·  Validation: **{r["Validation"]}**')
+            st.caption(r["Validation evidence"])
             c1,c2,c3=st.columns(3)
             c1.metric("Home",f'{r["Home %"]:.1f}%')
             c2.metric("Draw",f'{r["Draw %"]:.1f}%')
@@ -870,7 +915,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V14 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V15 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
 <div class="v14-nav">
