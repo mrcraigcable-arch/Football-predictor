@@ -313,18 +313,39 @@ ODDS_BASE="https://api.the-odds-api.com/v4/sports"
 def norm(s):
     import re, unicodedata
     s=unicodedata.normalize("NFKD",str(s)).encode("ascii","ignore").decode().lower()
-    # Keep meaningful location/name tokens. Only remove generic football suffixes.
     s=re.sub(r"\b(fc|cf|afc|ac|calcio|club)\b"," ",s)
     return re.sub(r"[^a-z0-9]","",s)
 
+# Explicit aliases are safer than increasingly loose fuzzy matching for money data.
+# Keys and values are normalized forms. Add only verified club-name variants here.
+TEAM_ALIASES = {
+    "rayovallecanodemadrid":"rayovallecano",
+    "rcdespanyoldebarcelona":"espanyol",
+    "reialclubdeportiuespanyoldebarcelona":"espanyol",
+    "rcdespanyol":"espanyol",
+    "deportivoalaves":"alaves",
+    "deportivoalaves":"alaves",
+    "athleticclubbilbao":"athleticclub",
+    "athleticbilbao":"athleticclub",
+    "realbetisbalompie":"realbetis",
+    "rcdmalorca":"mallorca",
+    "realclubdeportivomallorca":"mallorca",
+    "rceltadevigo":"celtavigo",
+    "realclubceltadevigo":"celtavigo",
+    "realoviedo":"oviedo",
+}
+
+def canonical_team(s):
+    x=norm(s)
+    return TEAM_ALIASES.get(x,x)
+
 def team_match(a,b):
-    """Conservative team-name match. Never use a short/loose match for money data."""
-    x,y=norm(a),norm(b)
+    """Fail-closed team match for market data: canonical equality or safe long prefix."""
+    x,y=canonical_team(a),canonical_team(b)
     if not x or not y: return False
     if x==y: return True
-    # Permit common long-form suffix/prefix variants only when the shorter normalized
-    # name is substantial. This handles e.g. Rayo Vallecano vs Rayo Vallecano de Madrid.
     return min(len(x),len(y))>=8 and (x.startswith(y) or y.startswith(x))
+
 
 @st.cache_data(ttl=300,show_spinner=False)
 def odds_fetch(api_key,sport_key):
@@ -351,28 +372,19 @@ def _event_date_utc(e):
         return None
 
 def consensus_for(events,home,away,fixture_date=None):
-    """Fail-closed UK soccer 1X2 consensus.
-
-    Integrity rules:
-    * event must match BOTH teams and (when supplied) the fixture date;
-    * market key must be exactly h2h (never h2h_lay/totals/etc.);
-    * each bookmaker must expose exactly one named home, draw and away outcome;
-    * prices and the three-way overround must be plausible;
-    * consensus fair probabilities are built per bookmaker then medianed;
-    * EV uses the best verified execution price, not the consensus median.
-    """
-    candidates=[]
+    """Fail-closed UK soccer 1X2 consensus plus rejection diagnostics."""
+    trace=[]; candidates=[]
     for e in events:
-        if not (team_match(home,e.get("home_team","")) and team_match(away,e.get("away_team",""))):
-            continue
-        if fixture_date is not None:
-            ed=_event_date_utc(e)
-            # UTC can cross a local midnight; allow one day either side, but never an unrelated event.
-            if ed is None or abs((ed-fixture_date).days)>1:
-                continue
-        candidates.append(e)
+        eh=e.get("home_team",""); ea=e.get("away_team",""); ed=_event_date_utc(e)
+        hm=team_match(home,eh); am=team_match(away,ea)
+        date_ok=(fixture_date is None) or (ed is not None and abs((ed-fixture_date).days)<=1)
+        trace.append({"API event":f"{eh} v {ea}","API time":e.get("commence_time",""),
+                      "Home match":hm,"Away match":am,"Date match":date_ok,
+                      "OpenFootball":f"{home} v {away}"})
+        if hm and am and date_ok: candidates.append(e)
     if len(candidates)!=1:
-        return None
+        return None,{"stage":"event","reason":f"Expected exactly 1 matching event; found {len(candidates)}",
+                    "trace":trace,"rejected_books":[]}
     event=candidates[0]
 
     valid=[]; rejected=[]
@@ -380,43 +392,38 @@ def consensus_for(events,home,away,fixture_date=None):
         title=b.get("title",b.get("key","Unknown"))
         h2h=[m for m in b.get("markets",[]) if m.get("key")=="h2h"]
         if len(h2h)!=1:
-            rejected.append((title,"missing/duplicate h2h")); continue
-        vals={"H":[],"D":[],"A":[]}
+            rejected.append({"Bookmaker":title,"Reason":f"h2h count {len(h2h)}"}); continue
+        vals={"H":[],"D":[],"A":[]}; seen=[]
         for o in h2h[0].get("outcomes",[]):
-            n=str(o.get("name","")).strip(); p=o.get("price")
-            if not isinstance(p,(int,float)) or not np.isfinite(p) or p<=1.01 or p>100:
-                continue
+            n=str(o.get("name","")).strip(); p=o.get("price"); seen.append(f"{n}={p}")
+            if not isinstance(p,(int,float)) or not np.isfinite(p) or p<=1.01 or p>100: continue
             if n.casefold()=="draw": vals["D"].append(float(p))
             elif team_match(home,n): vals["H"].append(float(p))
             elif team_match(away,n): vals["A"].append(float(p))
         if any(len(vals[k])!=1 for k in ("H","D","A")):
-            rejected.append((title,"could not uniquely map H/D/A")); continue
+            rejected.append({"Bookmaker":title,"Reason":"H/D/A mapping failed","Outcomes":" | ".join(seen)}); continue
         prices=np.array([vals["H"][0],vals["D"][0],vals["A"][0]],dtype=float)
         overround=float((1/prices).sum())
-        # Ordinary 1X2 books should cluster around 100%; reject corrupted/wrong-market triples.
         if not (0.95 <= overround <= 1.20):
-            rejected.append((title,f"implausible 1X2 overround {overround:.3f}")); continue
+            rejected.append({"Bookmaker":title,"Reason":f"overround {overround:.3f}","Outcomes":" | ".join(seen)}); continue
         fair=(1/prices)/overround
         valid.append({"book":title,"prices":prices,"fair":fair,"overround":overround})
 
     if not valid:
-        return None
-    arr=np.vstack([v["prices"] for v in valid])
-    fairs=np.vstack([v["fair"] for v in valid])
+        return None,{"stage":"bookmaker","reason":"Event matched, but no bookmaker passed 1X2 integrity checks",
+                    "trace":trace,"rejected_books":rejected}
+    arr=np.vstack([v["prices"] for v in valid]); fairs=np.vstack([v["fair"] for v in valid])
     median_prices=np.median(arr,axis=0)
-    fair=np.median(fairs,axis=0); fair=fair/fair.sum()
-    best_prices=np.max(arr,axis=0)
-
-    # Cross-book integrity check. A single bad feed cannot create a BET.
+    fair=np.median(fairs,axis=0); fair=fair/fair.sum(); best_prices=np.max(arr,axis=0)
     q25=np.percentile(arr,25,axis=0); q75=np.percentile(arr,75,axis=0)
     dispersion=np.max((q75-q25)/np.maximum(median_prices,1e-9))
     integrity="OK" if dispersion<=0.35 else "VERIFY"
-    detail=[{"Bookmaker":v["book"],"Home":round(v["prices"][0],3),
-             "Draw":round(v["prices"][1],3),"Away":round(v["prices"][2],3),
-             "Overround %":round(v["overround"]*100,1)} for v in valid]
-    return {"median":median_prices,"fair":fair,"best":best_prices,"books":len(valid),
-            "integrity":integrity,"detail":detail,"event":event,
-            "rejected":rejected}
+    detail=[{"Bookmaker":v["book"],"Home":round(v["prices"][0],3),"Draw":round(v["prices"][1],3),
+             "Away":round(v["prices"][2],3),"Overround %":round(v["overround"]*100,1)} for v in valid]
+    market={"median":median_prices,"fair":fair,"best":best_prices,"books":len(valid),
+            "integrity":integrity,"detail":detail,"event":event,"rejected":rejected}
+    return market,{"stage":"accepted","reason":f"Matched event; {len(valid)} valid bookmaker(s), {len(rejected)} rejected",
+                   "trace":trace,"rejected_books":rejected}
 
 
 @st.cache_data(ttl=3600,show_spinner=False)
@@ -753,7 +760,7 @@ with st.expander("Run confidence strategy audit",expanded=False):
                 st.error(f"Strategy audit could not complete: {e}")
 
 
-st.markdown("### 🧭 V15.1 Market-Integrity Fix")
+st.markdown("### 🧭 V15.2 Market-Integrity Fix")
 st.caption("The live predictor now chooses the probability engine per competition from V14 unseen-data evidence. It never applies calibration globally.")
 with st.expander("View league engine policy",expanded=False):
     policy_rows=[]
@@ -789,7 +796,7 @@ with pc2:
     day=st.date_input("Match date",date.today())
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V15.1 league-aware safety engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
+st.info("V15.2 diagnostic market-integrity engine: BET requires matched current odds, bookmaker depth, confidence, edge and positive EV. Large disagreements are isolated for verification.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -844,12 +851,20 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
                 i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
-                market=consensus_for(odds_events,h,a,day) if odds_events else None
+                market,matchdiag=consensus_for(odds_events,h,a,day) if odds_events else (None,{"stage":"no-events","reason":"No odds events returned","trace":[],"rejected_books":[]})
                 if odds_key:
                     diagnostics.append({"League":lname,"Sport key":meta["odds"],
                                         "API events returned":"","Credits used":"",
                                         "Credits remaining":"",
-                                        "Status":f'FIXTURE MATCH {"YES" if market else "NO"}: {h} v {a}'})
+                                        "Status":f'FIXTURE MATCH {"YES" if market else "NO"}: {h} v {a} — {matchdiag.get("reason","")}'})
+                    for tr in matchdiag.get("trace",[]):
+                        diagnostics.append({"League":lname,"Sport key":meta["odds"],"API events returned":"",
+                                            "Credits used":"","Credits remaining":"",
+                                            "Status":f'MATCH TRACE: {tr.get("API event")} | home={tr.get("Home match")} away={tr.get("Away match")} date={tr.get("Date match")} | {tr.get("API time")}'})
+                    for rb in matchdiag.get("rejected_books",[])[:20]:
+                        diagnostics.append({"League":lname,"Sport key":meta["odds"],"API events returned":"",
+                                            "Credits used":"","Credits remaining":"",
+                                            "Status":f'BOOK REJECT: {rb.get("Bookmaker")} — {rb.get("Reason")} — {rb.get("Outcomes","")}'})
                 odd=np.nan; best_odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
                 if market:
                     med,mfair,books=market["median"],market["fair"],market["books"]
@@ -982,7 +997,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V15.1 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
+st.caption("V15.2 fail-closed rule: BET requires matched current UK 1X2 bookmaker prices, de-margined market probability, sufficient model confidence, minimum edge and positive EV.")
 
 st.markdown("""
 <div class="v14-nav">
