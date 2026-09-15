@@ -20,7 +20,10 @@ st.title("⚽ Football Predictor")
 st.caption("Probability + market-value screening. Predictions are probabilities, not guaranteed winners.")
 
 BASE="https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
-FIX="https://www.football-data.co.uk/matches/resources/fixtures.csv"
+FIXTURE_SOURCES=[
+    "https://www.football-data.co.uk/fixtures.csv",
+    "https://www.football-data.co.uk/matches/resources/fixtures.csv",
+]
 FEATURES=["home_pts","away_pts","home_gf","away_gf","home_ga","away_ga",
           "home_shots","away_shots","home_sot","away_sot","elo_diff",
           "elo_home_prob","market_h","market_d","market_a"]
@@ -28,6 +31,41 @@ FEATURES=["home_pts","away_pts","home_gf","away_gf","home_ga","away_ga",
 def getcsv(url):
     r=requests.get(url,timeout=30); r.raise_for_status()
     return pd.read_csv(BytesIO(r.content))
+
+
+def current_fixtures():
+    """Load current Football-Data fixtures robustly and reject HTML/error pages."""
+    errors=[]
+    for url in FIXTURE_SOURCES:
+        try:
+            r=requests.get(
+                url,
+                timeout=30,
+                headers={"User-Agent":"Mozilla/5.0 FootballPredictor/1.1",
+                         "Accept":"text/csv,text/plain,*/*"}
+            )
+            r.raise_for_status()
+            raw=r.content
+            head=raw[:500].lower()
+            ctype=r.headers.get("content-type","").lower()
+            if b"<html" in head or b"<!doctype" in head:
+                raise ValueError("server returned HTML instead of CSV")
+            # Python engine is deliberately used here because the provider's
+            # CSV formatting can vary; malformed lines are skipped rather than
+            # crashing the entire app.
+            df=pd.read_csv(
+                BytesIO(raw),
+                engine="python",
+                on_bad_lines="skip",
+                encoding_errors="replace"
+            )
+            # A valid Football-Data fixture feed must contain these fields.
+            if not {"HomeTeam","AwayTeam"}.issubset(df.columns):
+                raise ValueError(f"not a fixture CSV; columns={list(df.columns)[:8]}")
+            return df
+        except Exception as e:
+            errors.append(f"{url}: {e}")
+    raise RuntimeError("Could not load a valid current-fixtures CSV. " + " | ".join(errors))
 
 def devig(h,d,a):
     try:
@@ -116,7 +154,7 @@ min_edge=c2.slider("Minimum market edge",0,15,4,1)/100
 if st.button("🔎 ANALYZE CURRENT PREMIER LEAGUE MATCHES",type="primary",use_container_width=True):
     try:
         with st.spinner("Training/checking model and loading current fixtures…"):
-            m,raw=model(); fx=getcsv(FIX)
+            m,raw=model(); fx=current_fixtures()
             if "Div" in fx.columns: fx=fx[fx.Div=="E0"].copy()
             if fx.empty: st.warning("No Premier League fixtures are present in the current feed."); st.stop()
             f=current_features(raw,fx)
