@@ -9,7 +9,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V16.2", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V16.3", page_icon="📈", layout="wide")
 
 
 
@@ -1150,14 +1150,8 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             else:
                 st.warning("No odds diagnostics were produced.")
 
-    st.subheader("💚 Best qualifying bets")
-    bets=d[d.Decision=="BET"].sort_values(["Edge pp","Confidence %"],ascending=False).head(topn)
-    if len(bets):
-        st.success(f"{len(bets)} selection(s) clear every automatic rule.")
-    elif st.session_state.get("odds_key","").strip():
-        st.info("No fixture clears every automatic BET rule. PASS is the correct output.")
-    else:
-        st.info("Prediction-only mode: connect current odds before any BET decision.")
+    st.subheader("🏁 Ranked match board")
+    st.caption("Selections are grouped by final grade, then ranked strongest → weakest inside that grade. PASS rankings mean closest to qualifying — they are not betting recommendations.")
 
     st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 BET &nbsp; 🟠 VERIFY &nbsp; 🔴 PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
     st.caption("🇬🇧 Odds are displayed as UK fractions. Decimal odds remain under the hood for probability, edge, EV and validation calculations.")
@@ -1165,12 +1159,12 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     def decimal_to_fractional(v, max_denominator=100):
         """UK-facing display only. All probability/EV maths remains decimal internally."""
         try:
-            d=float(v)
+            dec=float(v)
         except (TypeError, ValueError):
             return "—"
-        if not np.isfinite(d) or d <= 1.0:
+        if not np.isfinite(dec) or dec <= 1.0:
             return "—"
-        frac=Fraction(d-1.0).limit_denominator(max_denominator)
+        frac=Fraction(dec-1.0).limit_denominator(max_denominator)
         n,den=frac.numerator,frac.denominator
         if n == den:
             return "Evens"
@@ -1180,9 +1174,45 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         if pd.isna(v): return "—"
         return f"{v}{suffix}"
 
-    def match_card(r, expanded=False):
+    def _num(row, key, default=0.0):
+        try:
+            v=float(row.get(key, default))
+            return v if np.isfinite(v) else default
+        except Exception:
+            return default
+
+    def rank_score(row):
+        """Presentation ranking only; never changes BET/VERIFY/PASS classification."""
+        decision=row.get("Decision", "")
+        conf=_num(row,"Confidence %")
+        edge=_num(row,"Edge pp",-99.0)
+        ev=_num(row,"EV %",-99.0)
+        books=_num(row,"Bookmakers")
+        # BET/VERIFY: reward model confidence + pricing value; bookmaker depth is a small tie-breaker.
+        if decision in ("BET","VERIFY"):
+            return (edge*4.0) + (ev*1.5) + (conf*0.5) + min(books,25)*0.15
+        # PASS: rank by proximity to the actual qualification gates, not raw win probability.
+        # A pass with positive/near-threshold edge/EV sits above a clearly negative-value pass.
+        if decision=="PASS":
+            edge_component=min(edge,4.0)*5.0
+            ev_component=min(ev,0.0)*1.5 if ev < 0 else min(ev,20.0)*0.5
+            conf_component=min(conf,62.0)*0.35
+            depth_component=min(books,25)*0.10
+            return edge_component+ev_component+conf_component+depth_component
+        # With no trusted market, confidence is the only honest ranking signal.
+        return conf
+
+    def ranked_group(decision):
+        g=d[d.Decision==decision].copy()
+        if g.empty:
+            return g
+        g["_rank_score"]=g.apply(rank_score,axis=1)
+        return g.sort_values(["_rank_score","Confidence %"],ascending=[False,False]).reset_index(drop=True)
+
+    def match_card(r, expanded=False, rank=None):
         icon={"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
-        with st.expander(f'{icon} {r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}% • ⏰ {r.get("Kickoff UK","time unavailable")}', expanded=expanded):
+        rank_label=f"#{rank} {r['Decision']} • " if rank is not None else ""
+        with st.expander(f'{icon} {rank_label}{r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}% • ⏰ {r.get("Kickoff UK","time unavailable")}', expanded=expanded):
             st.caption(f'📅 {r.get("Kickoff UK","time unavailable")}  •  {r["League"]}  •  Decision: {r["Decision"]}')
             st.markdown(f'**🧠 {r["Model engine"]}**  ·  Validation: **{r["Validation"]}**')
             st.caption(r["Validation evidence"])
@@ -1213,7 +1243,6 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             elif pd.isna(r["Market odds"]):
                 st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
 
-            # Always expose fixture-level market diagnostics when a market was not accepted.
             md = r.get("Market diagnostic")
             if isinstance(md, dict) and (pd.isna(r.get("Market odds")) or md.get("stage") != "accepted"):
                 st.markdown("### 🧪 Market Match Diagnostic")
@@ -1252,20 +1281,20 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
                     st.dataframe(pd.DataFrame(rejected), use_container_width=True, hide_index=True)
                 st.caption("Fail-closed: this fixture cannot become BET until a unique event and valid named Home/Draw/Away h2h prices pass every integrity check.")
 
-    if len(bets):
-        for _,r in bets.iterrows():
-            match_card(r, expanded=True)
-
-    verifies=d[d.Decision=="VERIFY"].sort_values("Edge pp",ascending=False)
-    if len(verifies):
-        st.subheader("🟠 Manual verification queue")
-        st.caption("Large model/market disagreements are isolated here instead of being treated as automatic value.")
-        for _,r in verifies.head(topn).iterrows():
-            match_card(r)
-
-    st.subheader("📋 All analysed matches")
-    for _,r in d.head(max(topn,20)).iterrows():
-        match_card(r)
+    groups=[
+        ("BET","🟢 BET — strongest to weakest","Clears every automatic betting rule. Ranked by value signal, confidence and market depth.",True),
+        ("VERIFY","🟠 VERIFY — strongest to weakest","Potential value, but at least one safety check requires manual verification.",False),
+        ("PASS","🔴 PASS — closest to qualifying to weakest","Ranked by proximity to the betting gates. These remain PASS selections — ranking does not turn them into bets.",False),
+        ("PREDICTION ONLY","🔵 PREDICTION ONLY — strongest to weakest","No trusted current market decision. Ranked only by model confidence.",False),
+    ]
+    for decision,title,help_text,open_default in groups:
+        g=ranked_group(decision)
+        if g.empty:
+            continue
+        with st.expander(f"{title}  ({len(g)})", expanded=open_default):
+            st.caption(help_text)
+            for idx,(_,r) in enumerate(g.iterrows(),start=1):
+                match_card(r, expanded=(decision=="BET" and idx==1), rank=idx)
 
     st.divider()
     _tracker_panel()
@@ -1276,7 +1305,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V16 fail-closed rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V16.3 ranked-board rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
 st.markdown("""
 <div class="v14-nav">
