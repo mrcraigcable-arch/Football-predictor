@@ -1082,7 +1082,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V16.6 • SIMPLE MATCH OVERVIEW — BET signals are frozen at first classification; later checks update price movement without rewriting the original signal.")
+st.info("V17 • CLEAN PICKS DASHBOARD — the answer comes first; detailed evidence is one tap away.")
 
 if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1229,267 +1229,121 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
     _record_live_bets(d)
 
-    # V16 dashboard summary
+    # V17 CLEAN PICKS DASHBOARD — answer first, detail on demand.
     bet_count=int((d.Decision=="BET").sum())
-    verify_count=int((d.Decision=="VERIFY").sum())
-    pass_count=int((d.Decision=="PASS").sum())
-    pred_count=int((d.Decision=="PREDICTION ONLY").sum())
-    st.subheader("📊 Match dashboard")
-    m1,m2,m3,m4,m5=st.columns(5)
-    m1.metric("🎯 Analysed",len(d))
-    m2.metric("🟢 BET",bet_count)
-    m3.metric("🟠 Verify",verify_count)
-    m4.metric("🔵 No odds",pred_count)
-    m5.metric("🔴 Pass",pass_count)
-
-    if odds_key:
-        with st.expander("🧪 Data diagnostics"):
-            st.caption("Technical feed details. The API key is never displayed.")
-            if diagnostics:
-                st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
-            else:
-                st.warning("No odds diagnostics were produced.")
-
-    st.subheader("⭐ Top Picks Today")
-    st.caption("Win chance and betting value are deliberately separated. ⭐ means a strong model win prediction — it does not mean the price qualifies as a value bet.")
-
-    # V16.6 presentation-only strong-win board. It never changes the underlying BET/VERIFY/PASS decision.
-    strong=d[(d["Confidence %"] >= 68.0) & (d["Decision"] != "BET")].copy()
-    if not strong.empty:
-        strong=strong.sort_values("Confidence %",ascending=False).head(8)
-        for n,(_,sr) in enumerate(strong.iterrows(),start=1):
-            market_note="market unavailable" if pd.isna(sr.get("Market fair %")) else f'market {sr.get("Market fair %"):.0f}%'
-            val=str(sr.get("Validation",""))
-            guard=" • ⚠️ raw model" if "RAW" in val.upper() else ""
-            st.markdown(f'**⭐ #{n} {sr["Match"]} — {sr["Pick"]} {sr["Confidence %"]:.0f}%**  ·  {market_note}{guard}')
-    else:
-        st.info("No non-green selections reach the 68% strong-win threshold today.")
-
-    st.subheader("🏁 Ranked match board")
-    st.caption("🟢 is reserved for verified value bets. ⭐ strong-win chances are high-probability predictions and remain separate from betting value.")
-
-    st.markdown('<div class="v14-key"><b>Decision key</b> &nbsp; 🟢 VALUE BET &nbsp; ⭐ STRONG PICK — ODDS NOT VERIFIED &nbsp; 🟠 VALUE WATCH &nbsp; 🔴 AVOID/PASS &nbsp; 🔵 PREDICTION ONLY</div>', unsafe_allow_html=True)
-    st.caption("🇬🇧 Odds are displayed as UK fractions. Decimal odds remain under the hood for probability, edge, EV and validation calculations.")
+    strong_mask=(d["Confidence %"] >= 68.0) & (d["Decision"] != "BET")
+    strong_count=int(strong_mask.sum())
 
     def decimal_to_fractional(v, max_denominator=100):
-        """UK-facing display only. All probability/EV maths remains decimal internally."""
-        try:
-            dec=float(v)
-        except (TypeError, ValueError):
-            return "—"
-        if not np.isfinite(dec) or dec <= 1.0:
-            return "—"
+        try: dec=float(v)
+        except (TypeError, ValueError): return "—"
+        if not np.isfinite(dec) or dec <= 1.0: return "—"
         frac=Fraction(dec-1.0).limit_denominator(max_denominator)
-        n,den=frac.numerator,frac.denominator
-        if n == den:
-            return "Evens"
-        return f"{n}/{den}"
+        if frac.numerator == frac.denominator: return "Evens"
+        return f"{frac.numerator}/{frac.denominator}"
 
-    def fmt(v,suffix=""):
-        if pd.isna(v): return "—"
-        return f"{v}{suffix}"
-
-    def _num(row, key, default=0.0):
+    def _num(row,key,default=np.nan):
         try:
-            v=float(row.get(key, default))
-            return v if np.isfinite(v) else default
-        except Exception:
-            return default
+            v=float(row.get(key,default)); return v if np.isfinite(v) else default
+        except Exception: return default
 
-    def rank_score(row):
-        """Presentation ranking only; never changes BET/VERIFY/PASS classification."""
-        decision=row.get("Decision", "")
-        conf=_num(row,"Confidence %")
-        edge=_num(row,"Edge pp",-99.0)
-        ev=_num(row,"EV %",-99.0)
-        books=_num(row,"Bookmakers")
-        # BET/VERIFY: reward model confidence + pricing value; bookmaker depth is a small tie-breaker.
-        if decision in ("BET","VERIFY"):
-            return (edge*4.0) + (ev*1.5) + (conf*0.5) + min(books,25)*0.15
-        # PASS: rank by proximity to the actual qualification gates, not raw win probability.
-        # A pass with positive/near-threshold edge/EV sits above a clearly negative-value pass.
-        if decision=="PASS":
-            edge_component=min(edge,4.0)*5.0
-            ev_component=min(ev,0.0)*1.5 if ev < 0 else min(ev,20.0)*0.5
-            conf_component=min(conf,62.0)*0.35
-            depth_component=min(books,25)*0.10
-            return edge_component+ev_component+conf_component+depth_component
-        # With no trusted market, confidence is the only honest ranking signal.
-        return conf
+    def _short_team(name):
+        x=str(name or "")
+        for suffix in [" Football Club"," County FC"," City FC"," United FC"," FC"]:
+            if x.endswith(suffix): x=x[:-len(suffix)]
+        return x.strip()
 
-    def ranked_group(decision):
-        g=d[d.Decision==decision].copy()
-        if g.empty:
-            return g
-        g["_rank_score"]=g.apply(rank_score,axis=1)
-        return g.sort_values(["_rank_score","Confidence %"],ascending=[False,False]).reset_index(drop=True)
+    def _context_signal(r):
+        ctx=r.get("Context")
+        if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
+        hh,aa=ctx.get("home",{}),ctx.get("away",{})
+        hp,ap=hh.get("ppg"),aa.get("ppg"); hv,av=hh.get("venue_ppg"),aa.get("venue_ppg")
+        if hp is None or ap is None: return "➖"
+        pred=str(r.get("Prediction","")).upper()
+        if pred=="HOME": support=(hp-ap)+.5*((hv or hp)-(av or ap))
+        elif pred=="AWAY": support=(ap-hp)+.5*((av or ap)-(hv or hp))
+        else: return "➖"
+        return "✅" if support>=.5 else "⚠️" if support<=-.35 else "➖"
 
-    def match_card(r, expanded=False, rank=None):
-        strong_no_odds = r["Decision"] == "PREDICTION ONLY" and float(r.get("Confidence %",0) or 0) >= 68.0
-        icon = "⭐" if strong_no_odds else {"BET":"🟢","VERIFY":"🟠","PASS":"🔴","PREDICTION ONLY":"🔵"}.get(r["Decision"],"⚪")
-        display_decision = "STRONG PICK — ODDS NOT VERIFIED" if strong_no_odds else r["Decision"]
-        rank_label=f"#{rank} {display_decision} • " if rank is not None else ""
-        with st.expander(f'{icon} {rank_label}{r["Match"]} — {r["Pick"]} {r["Confidence %"]:.1f}% • ⏰ {r.get("Kickoff UK","time unavailable")}', expanded=expanded):
-            st.caption(f'📅 {r.get("Kickoff UK","time unavailable")}  •  {r["League"]}  •  Decision: {display_decision}')
-            st.markdown(f'**🧠 {r["Model engine"]}**  ·  Validation: **{r["Validation"]}**')
-            st.caption(r["Validation evidence"])
-            c1,c2,c3=st.columns(3)
-            c1.metric("Home",f'{r["Home %"]:.1f}%')
-            c2.metric("Draw",f'{r["Draw %"]:.1f}%')
-            c3.metric("Away",f'{r["Away %"]:.1f}%')
-            c1,c2=st.columns(2)
-            c1.metric("Model fair odds",decimal_to_fractional(r["Fair odds"]))
-            c2.metric("Market odds",decimal_to_fractional(r["Market odds"]))
-            if pd.notna(r.get("Best market odds")):
-                st.caption(f'Best verified UK price for EV: {decimal_to_fractional(r["Best market odds"])} • Market integrity: {r.get("Market integrity","—")}')
-            if r.get("Bookmaker detail"):
-                with st.expander("Bookmaker 1X2 audit"):
-                    st.dataframe(pd.DataFrame(r["Bookmaker detail"]),use_container_width=True,hide_index=True)
-            c1,c2=st.columns(2)
-            c1.metric("Market fair %",fmt(r["Market fair %"],"%"))
-            c2.metric("Bookmakers",fmt(r["Bookmakers"]))
-            c1,c2=st.columns(2)
-            c1.metric("Edge",fmt(r["Edge pp"]," pp"))
-            c2.metric("Model EV",fmt(r["EV %"],"%"))
-            ctx=r.get("Context")
-            if isinstance(ctx,dict) and ctx.get("available"):
-                with st.expander("⚽ Match overview", expanded=False):
-                    hh,aa=ctx.get("home",{}),ctx.get("away",{})
-                    home_name,away_name=r.get("Home team"),r.get("Away team")
-                    def form_label(x):
-                        p=x.get("ppg")
-                        if p is None: return "⚪ Unknown"
-                        if p >= 1.8: return "🟢 Strong"
-                        if p >= 1.2: return "🟡 Average"
-                        if p >= .8: return "🟠 Mixed"
-                        return "🔴 Poor"
-                    def defence_label(x):
-                        ga=x.get("ga")
-                        if ga is None: return "⚪ Unknown"
-                        if ga <= .8: return "🟢 Strong"
-                        if ga <= 1.3: return "🟡 Average"
-                        if ga <= 1.8: return "🟠 Below average"
-                        return "🔴 Weak"
-                    def btts_label(x):
-                        b=x.get("btts")
-                        if b is None: return "Unknown"
-                        if b >= 70: return "Very high"
-                        if b >= 50: return "High"
-                        if b >= 30: return "Medium"
-                        return "Low"
-                    st.markdown(f'**Table:** {home_name} {hh.get("position","—")}th • {away_name} {aa.get("position","—")}th')
-                    st.markdown(f'**Form:** {home_name} {form_label(hh)} • {away_name} {form_label(aa)}')
-                    st.markdown(f'**Defence:** {home_name} {defence_label(hh)} • {away_name} {defence_label(aa)}')
-                    st.markdown(f'**BTTS:** {home_name} {btts_label(hh)} • {away_name} {btts_label(aa)}')
-                    sc=ctx.get("scorelines",[])
-                    if sc: st.markdown("**Likely scores:** "+" • ".join(f'**{x["score"]}**' for x in sc))
-                    pred=str(r.get("Prediction","")).upper()
-                    hp=hh.get("ppg"); ap=aa.get("ppg"); hv=hh.get("venue_ppg"); av=aa.get("venue_ppg")
-                    verdict="NEUTRAL"; note="Context is mixed and does not strongly confirm or contradict the model."
-                    if pred=="HOME" and hp is not None and ap is not None:
-                        support=(hp-ap)+.5*((hv or hp)-(av or ap))
-                        if support >= .5: verdict,note="SUPPORTS MODEL","Recent form and venue form broadly support the HOME prediction."
-                        elif support <= -.35: verdict,note="CAUTION","Recent form does not strongly support the HOME prediction."
-                    elif pred=="AWAY" and hp is not None and ap is not None:
-                        support=(ap-hp)+.5*((av or ap)-(hv or hp))
-                        if support >= .5: verdict,note="SUPPORTS MODEL","Recent form and venue form broadly support the AWAY prediction."
-                        elif support <= -.35: verdict,note="CAUTION","Recent form does not strongly support the AWAY prediction."
-                    if verdict=="SUPPORTS MODEL": st.success(f"🟢 CONTEXT: {verdict} — {note}")
-                    elif verdict=="CAUTION": st.warning(f"🟠 CONTEXT: {verdict} — {note}")
-                    else: st.info(f"🔵 CONTEXT: {verdict} — {note}")
-                    with st.expander("Show detailed stats"):
-                        st.write(f'Last 8: {home_name} {hh.get("form","—")} • {away_name} {aa.get("form","—")}')
-                        st.write(f'PPG: {hh.get("ppg","—")} vs {aa.get("ppg","—")} • Home/Away PPG: {hh.get("venue_ppg","—")} vs {aa.get("venue_ppg","—")}')
-                        st.write(f'Goals for/against: {hh.get("gf","—")}/{hh.get("ga","—")} vs {aa.get("gf","—")}/{aa.get("ga","—")}')
-                        st.write(f'Clean sheets: {hh.get("clean_sheet","—")}% vs {aa.get("clean_sheet","—")}%')
-                        if sc: st.write("Scoreline context: "+" • ".join(f'{x["score"]} {x["prob"]}%' for x in sc))
-                        st.caption("Team news is not shown until a verified injury/suspension source is connected.")
+    def _market_signal(r):
+        if pd.isna(r.get("Market fair %")): return "➖"
+        if str(r.get("Market integrity",""))=="OK": return "✅"
+        return "⚠️"
 
-            if r["Decision"]=="VERIFY":
-                st.warning(f'🟠 VERIFY — {r.get("Decision reason", "Manual market verification required.")} This is deliberately NOT labelled BET.')
-            elif r["Decision"]=="BET":
-                st.success(f'🟢 BET — {r.get("Decision reason", "Clears all current betting rules.")}')
-            elif r["Decision"]=="PASS":
-                st.error(f'🔴 PASS — {r.get("Decision reason", "Does not clear the betting rules.")}')
-            if r.get("Secondary checks"):
-                with st.expander("🤖 Secondary auto-verification audit", expanded=False):
-                    for _check in r.get("Secondary checks",[]): st.write("✓ "+str(_check))
-            elif pd.isna(r["Market odds"]):
-                if strong_no_odds:
-                    st.info(f'⭐ STRONG PICK — ODDS NOT VERIFIED — the model gives {r["Pick"]} a {r["Confidence %"]:.0f}% win chance, but no trusted current 1X2 market was matched. This is a strong prediction, not a verified value bet.')
-                else:
-                    st.info("🔵 PREDICTION ONLY — no matched current odds, so this is not a PASS and not a BET.")
+    def _pick_reason(r):
+        conf=_num(r,"Confidence %",0)
+        ctx=_context_signal(r); market=_market_signal(r)
+        if r.get("Decision")=="BET": return "Model and verified price clear the value rules."
+        if conf>=68 and market=="➖": return "Strong model prediction; current bookmaker odds are not verified."
+        if conf>=68 and ctx=="⚠️": return "Strong model prediction, but recent context adds caution."
+        if conf>=68: return "One of today's strongest model win predictions."
+        return "Model selection — open details for the full evidence."
 
-            md = r.get("Market diagnostic")
-            if isinstance(md, dict) and (pd.isna(r.get("Market odds")) or md.get("stage") != "accepted"):
-                st.markdown("### 🧪 Market Match Diagnostic")
-                st.write(f'**Fixture requested:** {r["Match"]}')
-                st.write(f'**Final stage:** {md.get("stage", "unknown")}')
-                st.write(f'**Final rejection reason:** {md.get("reason", "No reason recorded")}')
-                trace = md.get("trace", []) or []
-                st.write(f'**Odds API candidates inspected:** {len(trace)}')
-                api = md.get("api", {}) or {}
-                if api:
-                    st.markdown("#### Odds API response")
-                    st.write(f'**Sport key:** `{api.get("sport_key", "unknown")}`')
-                    st.write(f'**Endpoint:** `{api.get("endpoint", "unknown")}`')
-                    st.write(f'**Request:** region `{api.get("region", "uk")}` · market `{api.get("market", "h2h")}`')
-                    st.write(f'**HTTP status:** {api.get("http_status", "unknown")}')
-                    st.write(f'**Events returned:** {api.get("events", "unknown")}')
-                    st.write(f'**Quota:** used {api.get("used", "?")} · remaining {api.get("remaining", "?")} · last call cost {api.get("last", "?")}')
-                    if api.get("api_message"):
-                        st.write(f'**API message:** {api.get("api_message")}')
-                    if api.get("http_status") == 200 and api.get("events") == 0:
-                        st.info("The API request itself succeeded, but it returned no current/live odds events for this league. Completed matches are not returned by the current /odds endpoint; this is not a team-name matching failure.")
-                if trace:
-                    rows=[]
-                    for t in trace:
-                        rows.append({
-                            "Odds API event": t.get("API event", ""),
-                            "Kickoff": t.get("API time", ""),
-                            "Home match": "PASS" if t.get("Home match") else "FAIL",
-                            "Away match": "PASS" if t.get("Away match") else "FAIL",
-                            "Date match": "PASS" if t.get("Date match") else "FAIL",
-                        })
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-                rejected = md.get("rejected_books", []) or []
-                if rejected:
-                    st.write(f'**Bookmakers rejected after fixture match:** {len(rejected)}')
-                    st.dataframe(pd.DataFrame(rejected), use_container_width=True, hide_index=True)
-                st.caption("Fail-closed: this fixture cannot become BET until a unique event and valid named Home/Draw/Away h2h prices pass every integrity check.")
+    def _detail_panel(r):
+        st.markdown(f'**{r["Match"]}**  ·  {r.get("Kickoff UK","time unavailable")}')
+        c1,c2,c3=st.columns(3)
+        c1.metric("Home",f'{r["Home %"]:.0f}%'); c2.metric("Draw",f'{r["Draw %"]:.0f}%'); c3.metric("Away",f'{r["Away %"]:.0f}%')
+        st.markdown(f'**Model:** {r.get("Model engine","—")}  ·  **Validation:** {r.get("Validation","—")}')
+        if pd.notna(r.get("Market fair %")):
+            st.write(f'Bookmaker market: {r.get("Market fair %"):.0f}% • Edge: {r.get("Edge pp"):+.1f}pp • EV: {r.get("EV %"):+.1f}% • {int(r.get("Bookmakers",0))} bookmakers')
+            st.write(f'Consensus odds: **{decimal_to_fractional(r.get("Market odds"))}** • Best verified: **{decimal_to_fractional(r.get("Best market odds"))}**')
+        else:
+            st.write("Current bookmaker odds were not securely matched, so value/EV is not claimed.")
+        ctx=r.get("Context")
+        if isinstance(ctx,dict) and ctx.get("available"):
+            hh,aa=ctx.get("home",{}),ctx.get("away",{})
+            hn,an=_short_team(r.get("Home team")),_short_team(r.get("Away team"))
+            st.write(f'Form PPG: {hn} {hh.get("ppg","—")} • {an} {aa.get("ppg","—")}')
+            st.write(f'Goals for/against: {hh.get("gf","—")}/{hh.get("ga","—")} • {aa.get("gf","—")}/{aa.get("ga","—")}')
+            sc=ctx.get("scorelines",[])
+            if sc: st.write("Likely scores: "+" • ".join(x["score"] for x in sc[:3]))
+        st.caption(r.get("Decision reason", ""))
 
-    groups=[
-        ("BET","🟢 VALUE BET — strongest to weakest","Clears every automatic betting rule. Ranked by value signal, confidence and market depth.",True),
-        ("VERIFY","🟠 VALUE WATCH — strongest to weakest","Potential value, but at least one safety check prevents a green value-bet classification.",False),
-        ("PASS","🔴 AVOID / PASS — closest to qualifying to weakest","Does not clear the value-bet gates. Ranked only to show which came closest.",False),
-    ]
-    for decision,title,help_text,open_default in groups:
-        g=ranked_group(decision)
-        if g.empty:
-            continue
-        with st.expander(f"{title}  ({len(g)})", expanded=open_default):
-            st.caption(help_text)
-            for idx,(_,r) in enumerate(g.iterrows(),start=1):
-                match_card(r, expanded=(decision=="BET" and idx==1), rank=idx)
+    # One clean answer-first header.
+    st.markdown("## 🏆 Today's Picks")
+    st.caption(f'{len(d)} matches analysed • {bet_count} verified value bet{"s" if bet_count!=1 else ""} • {strong_count} strong model pick{"s" if strong_count!=1 else ""}')
 
-    # Split no-market predictions so strong predicted winners are not visually buried.
-    pred_all=ranked_group("PREDICTION ONLY")
-    if not pred_all.empty:
-        strong_pred=pred_all[pred_all["Confidence %"] >= 68.0].reset_index(drop=True)
-        normal_pred=pred_all[pred_all["Confidence %"] < 68.0].reset_index(drop=True)
-        if not strong_pred.empty:
-            with st.expander(f"⭐ STRONG PICKS — ODDS NOT VERIFIED  ({len(strong_pred)})", expanded=True):
-                st.caption("High model win probability, but the app could not verify a trusted current 1X2 price. Strong prediction ≠ verified value bet.")
-                for idx,(_,r) in enumerate(strong_pred.iterrows(),start=1):
-                    match_card(r, expanded=(idx==1), rank=idx)
-        if not normal_pred.empty:
-            with st.expander(f"🔵 PREDICTION ONLY — strongest to weakest  ({len(normal_pred)})", expanded=False):
-                st.caption("No trusted current market decision. Ranked only by model confidence.")
-                for idx,(_,r) in enumerate(normal_pred.iterrows(),start=1):
-                    match_card(r, expanded=False, rank=idx)
+    # Top board: verified BETs first, then strongest high-probability selections. No hidden reclassification.
+    top=d.copy()
+    top["_tier"] = np.where(top["Decision"].eq("BET"),0,np.where(top["Confidence %"].ge(68.0),1,2))
+    top["_value"] = pd.to_numeric(top.get("Edge pp"),errors="coerce").fillna(-99)
+    top=top[top["_tier"]<2].sort_values(["_tier","Confidence %","_value"],ascending=[True,False,False]).head(5)
 
-    st.divider()
-    _tracker_panel()
+    if top.empty:
+        st.info("No selection reaches today's Top/Strong Pick threshold. Other matches are available below.")
+    else:
+        for pos,(_,r) in enumerate(top.iterrows(),1):
+            is_bet=r["Decision"]=="BET"
+            label="🟢 TOP VALUE" if is_bet else "⭐ STRONG PICK"
+            price=decimal_to_fractional(r.get("Best market odds") if pd.notna(r.get("Best market odds")) else r.get("Market odds"))
+            price_text=f" • Odds {price}" if price!="—" else " • Odds not verified"
+            pick_team=_short_team(r.get("Home team") if r["Pick"]=="HOME" else r.get("Away team") if r["Pick"]=="AWAY" else "Draw")
+            st.markdown(f'### {pos}. {pick_team.upper()} — {r["Pick"]}')
+            st.markdown(f'**{r["Confidence %"]:.0f}% predicted chance**  ·  **{label}**{price_text}')
+            st.caption(f'Model ✅   Market {_market_signal(r)}   Context {_context_signal(r)}')
+            st.write(_pick_reason(r))
+            with st.expander("Why this pick?  ›", expanded=False):
+                _detail_panel(r)
+            st.divider()
+
+    # Everything else is intentionally out of the way.
+    shown=set(top.index.tolist()) if not top.empty else set()
+    other=d.loc[[i for i in d.index if i not in shown]].sort_values("Confidence %",ascending=False)
+    with st.expander(f"⚪ Other matches ({len(other)})", expanded=False):
+        st.caption("These are hidden by default to keep the home screen clean. Tap a match only when you want the detail.")
+        for _,r in other.iterrows():
+            pick_team=_short_team(r.get("Home team") if r["Pick"]=="HOME" else r.get("Away team") if r["Pick"]=="AWAY" else "Draw")
+            with st.expander(f'{pick_team} — {r["Pick"]} {r["Confidence %"]:.0f}%  •  {r["Decision"]}', expanded=False):
+                _detail_panel(r)
+
+    if odds_key:
+        with st.expander("Technical / data diagnostics", expanded=False):
+            st.caption("Feed diagnostics are kept out of the betting view unless you deliberately open them.")
+            if diagnostics: st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
+            else: st.info("No odds diagnostics were produced.")
+
+    with st.expander("📈 Model performance & validation", expanded=False):
+        _tracker_panel()
 
     if quota_remaining is not None:
         st.caption(f"Odds API credits remaining (provider header): {quota_remaining}")
@@ -1497,7 +1351,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
 
 st.divider()
-st.caption("V16.5 context-intelligence + auto-verification rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V17 clean-dashboard rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
 st.markdown("""
 <div class="v14-nav">
