@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import html
 from collections import defaultdict, deque
 from fractions import Fraction
 from datetime import date, datetime, timezone
@@ -9,7 +10,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 
-st.set_page_config(page_title="Craig's Football Predictor V16.5", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V17.1", page_icon="📈", layout="wide")
 
 
 
@@ -133,7 +134,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V16.1</span>
+ <span class="v14-chip">V17.1</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -170,7 +171,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V16.1</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V17.1</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -179,7 +180,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 
 st.markdown("""
 <style>
-/* V16.1 FINISH — presentation-only layer. Prediction and validation logic unchanged. */
+/* V17.1 FINISH — presentation-only layer. Prediction and validation logic unchanged. */
 :root{--vbg:#030912;--vpanel:#081522;--vpanel2:#0b1d2d;--vline:#16354b;--vgreen:#20e884;--vblue:#22a8ff;--vmuted:#8ea4b8}
 .stApp{background:radial-gradient(700px 330px at 50% -100px,rgba(32,232,132,.16),transparent 58%),linear-gradient(180deg,#06131f 0%,#020811 72%)!important}
 .block-container{max-width:860px!important;padding-top:.55rem!important;padding-bottom:6.5rem!important}
@@ -1299,59 +1300,94 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             if sc: st.write("Likely scores: "+" • ".join(x["score"] for x in sc[:3]))
         st.caption(r.get("Decision reason", ""))
 
-    # One clean answer-first header.
-    st.markdown("## 🏆 Today's Picks")
-    st.caption(f'{len(d)} matches analysed • {bet_count} verified value bet{"s" if bet_count!=1 else ""} • {strong_count} strong model pick{"s" if strong_count!=1 else ""}')
+    # V17.1 THREE-LENS DASHBOARD — three simple questions, detail only on demand.
+    def _context_signal_v171(r):
+        ctx=r.get("Context")
+        if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
+        hh,aa=ctx.get("home",{}),ctx.get("away",{})
+        hp,ap=hh.get("ppg"),aa.get("ppg"); hv,av=hh.get("venue_ppg"),aa.get("venue_ppg")
+        if hp is None or ap is None: return "➖"
+        pred=str(r.get("Pick","")).upper()
+        if pred=="HOME": support=(hp-ap)+.5*((hv if hv is not None else hp)-(av if av is not None else ap))
+        elif pred=="AWAY": support=(ap-hp)+.5*((av if av is not None else ap)-(hv if hv is not None else hp))
+        else: return "➖"
+        return "✅" if support>=.5 else "⚠️" if support<=-.35 else "➖"
 
-    # Top board: verified BETs first, then strongest high-probability selections. No hidden reclassification.
-    top=d.copy()
-    top["_tier"] = np.where(top["Decision"].eq("BET"),0,np.where(top["Confidence %"].ge(68.0),1,2))
-    top["_value"] = pd.to_numeric(top.get("Edge pp"),errors="coerce").fillna(-99)
-    top=top[top["_tier"]<2].sort_values(["_tier","Confidence %","_value"],ascending=[True,False,False]).head(5)
+    def _validation_word(r):
+        v=str(r.get("Validation",""))
+        if "FALLBACK" in v: return "RAW"
+        if "APPROVED" in v: return "VALIDATED"
+        return "CHECK"
 
-    if top.empty:
-        st.info("No selection reaches today's Top/Strong Pick threshold. Other matches are available below.")
-    else:
-        for pos,(_,r) in enumerate(top.iterrows(),1):
-            is_bet=r["Decision"]=="BET"
-            label="🟢 TOP VALUE" if is_bet else "⭐ STRONG PICK"
-            price=decimal_to_fractional(r.get("Best market odds") if pd.notna(r.get("Best market odds")) else r.get("Market odds"))
-            price_text=f" • Odds {price}" if price!="—" else " • Odds not verified"
-            pick_team=_short_team(r.get("Home team") if r["Pick"]=="HOME" else r.get("Away team") if r["Pick"]=="AWAY" else "Draw")
-            st.markdown(f'### {pos}. {pick_team.upper()} — {r["Pick"]}')
-            st.markdown(f'**{r["Confidence %"]:.0f}% predicted chance**  ·  **{label}**{price_text}')
-            st.caption(f'Model ✅   Market {_market_signal(r)}   Context {_context_signal(r)}')
-            st.write(_pick_reason(r))
-            with st.expander("Why this pick?  ›", expanded=False):
-                _detail_panel(r)
-            st.divider()
+    def _team_for_pick(r):
+        if r["Pick"]=="HOME": return _short_team(r.get("Home team"))
+        if r["Pick"]=="AWAY": return _short_team(r.get("Away team"))
+        return "Draw"
 
-    # Everything else is intentionally out of the way.
-    shown=set(top.index.tolist()) if not top.empty else set()
-    other=d.loc[[i for i in d.index if i not in shown]].sort_values("Confidence %",ascending=False)
-    with st.expander(f"⚪ Other matches ({len(other)})", expanded=False):
-        st.caption("These are hidden by default to keep the home screen clean. Tap a match only when you want the detail.")
-        for _,r in other.iterrows():
-            pick_team=_short_team(r.get("Home team") if r["Pick"]=="HOME" else r.get("Away team") if r["Pick"]=="AWAY" else "Draw")
-            with st.expander(f'{pick_team} — {r["Pick"]} {r["Confidence %"]:.0f}%  •  {r["Decision"]}', expanded=False):
-                _detail_panel(r)
+    def _price_for(r):
+        v=r.get("Best market odds") if pd.notna(r.get("Best market odds")) else r.get("Market odds")
+        return decimal_to_fractional(v)
 
+    def _clean_reason(r,lens):
+        ctx=_context_signal_v171(r); market=_market_signal(r)
+        if lens=="both": return "High win probability and the verified price also passes the value rules."
+        if lens=="value": return "Verified bookmaker price clears the model's value, edge and EV rules."
+        if market=="➖": return "One of the model's strongest win probabilities; bookmaker odds are not verified."
+        if ctx=="⚠️": return "Strong win probability, although recent match context adds caution."
+        if ctx=="✅": return "Strong win probability and recent match context supports the selection."
+        return "One of the model's strongest win probabilities today."
+
+    st.markdown("""
+    <style>
+    .v171-head{margin:.25rem 0 1rem}.v171-head h2{margin:0!important;font-size:1.65rem!important}.v171-head p{margin:.25rem 0 0;color:#8fa8bd;font-size:.92rem}
+    .v171-lens{margin:1.25rem 0 .6rem;font-size:1.15rem;font-weight:900}.v171-card{border:1px solid #1b3c53;border-radius:18px;background:linear-gradient(145deg,#091a29,#06121e);padding:15px 16px;margin:0 0 8px}
+    .v171-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.v171-team{font-size:1.2rem;font-weight:950;line-height:1.15}.v171-pick{color:#9db5c9;font-size:.83rem;font-weight:800;margin-top:3px}.v171-prob{font-size:1.55rem;font-weight:950;white-space:nowrap}.v171-prob small{display:block;font-size:.65rem;color:#8fa8bd;text-align:right;font-weight:700}
+    .v171-badges{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0 8px}.v171-badge{border:1px solid #28465d;border-radius:999px;padding:4px 8px;font-size:.72rem;font-weight:850;color:#cbd9e5}.v171-good{border-color:#1f7d55;color:#65efaa}.v171-hot{border-color:#8b6d18;color:#ffd66d}.v171-reason{font-size:.86rem;color:#c5d3df;line-height:1.4}.v171-empty{border:1px dashed #28465d;border-radius:16px;padding:14px;color:#91a8bc;margin-bottom:8px}
+    @media(max-width:520px){.v171-card{padding:13px 14px}.v171-team{font-size:1.12rem}.v171-prob{font-size:1.42rem}}
+    </style>
+    <div class="v171-head"><h2>Today's selections</h2><p>Three simple views. Tap a match only when you want the full analysis.</p></div>
+    """,unsafe_allow_html=True)
+
+    likely=d[d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
+    value=d[d["Decision"].eq("BET")].copy()
+    if not value.empty:
+        value["_vscore"]=pd.to_numeric(value["Edge pp"],errors="coerce").fillna(0)+0.15*pd.to_numeric(value["EV %"],errors="coerce").fillna(0)
+        value=value.sort_values(["_vscore","Confidence %"],ascending=False).head(5)
+    both=d[(d["Decision"].eq("BET")) & (d["Confidence %"].ge(68.0)) & d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
+
+    def _render_clean_rows(frame,lens):
+        if frame.empty:
+            msg={"likely":"No win selections available.","value":"No verified value bets today — the app has not lowered the rules to create activity.","both":"No selection currently has both 68%+ win probability and verified value."}[lens]
+            st.markdown('<div class="v171-empty">'+html.escape(msg)+'</div>',unsafe_allow_html=True); return
+        for pos,(_,r) in enumerate(frame.iterrows(),1):
+            team=_team_for_pick(r); conf=_num(r,"Confidence %",0); price=_price_for(r); ctx=_context_signal_v171(r); market=_market_signal(r); val=_validation_word(r)
+            odds_badge='<span class="v171-badge">Odds '+html.escape(price)+'</span>' if price!="—" else '<span class="v171-badge">Odds not verified</span>'
+            main_badge='<span class="v171-badge v171-good">VALUE</span>' if r.get("Decision")=="BET" else '<span class="v171-badge">WIN PICK</span>'
+            if lens=="both": main_badge='<span class="v171-badge v171-hot">WIN + VALUE</span>'
+            card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Pick"]))+' • '+html.escape(str(r.get("League","")))+'</div></div><div class="v171-prob">'+f'{conf:.0f}'+'%<small>model chance</small></div></div><div class="v171-badges">'+main_badge+odds_badge+'<span class="v171-badge">Model '+html.escape(val)+'</span><span class="v171-badge">Market '+market+'</span><span class="v171-badge">Context '+ctx+'</span></div><div class="v171-reason">'+html.escape(_clean_reason(r,lens))+'</div></div>')
+            st.markdown(card,unsafe_allow_html=True)
+            with st.expander("See full analysis",expanded=False): _detail_panel(r)
+
+    st.markdown('<div class="v171-lens">🏆 Most likely winners</div>',unsafe_allow_html=True)
+    st.caption("Highest model win probabilities. Price does not decide this ranking."); _render_clean_rows(likely,"likely")
+    st.markdown('<div class="v171-lens">💰 Best value bets</div>',unsafe_allow_html=True)
+    st.caption("Only selections that pass the existing bookmaker, edge, EV and verification rules."); _render_clean_rows(value,"value")
+    st.markdown('<div class="v171-lens">🔥 Win chance + value</div>',unsafe_allow_html=True)
+    st.caption("The overlap: 68%+ predicted win probability and a verified value price."); _render_clean_rows(both,"both")
+
+    with st.expander(f"All other matches ({len(d)})",expanded=False):
+        for _,r in d.sort_values("Confidence %",ascending=False).iterrows():
+            team=_team_for_pick(r)
+            with st.expander(f'{team} • {r["Pick"]} • {r["Confidence %"]:.0f}% • {r["Decision"]}',expanded=False): _detail_panel(r)
     if odds_key:
-        with st.expander("Technical / data diagnostics", expanded=False):
-            st.caption("Feed diagnostics are kept out of the betting view unless you deliberately open them.")
+        with st.expander("Technical / data diagnostics",expanded=False):
             if diagnostics: st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
             else: st.info("No odds diagnostics were produced.")
-
-    with st.expander("📈 Model performance & validation", expanded=False):
-        _tracker_panel()
-
-    if quota_remaining is not None:
-        st.caption(f"Odds API credits remaining (provider header): {quota_remaining}")
-    if not st.session_state.get("odds_key","").strip():
-        st.warning("No current-odds key is connected, so BET labels, market edge and EV remain disabled.")
-
+    with st.expander("📈 Model performance & validation",expanded=False): _tracker_panel()
+    if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
+    if not st.session_state.get("odds_key","").strip(): st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V17 clean-dashboard rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V17.1 three-lens rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
 st.markdown("""
 <div class="v14-nav">
