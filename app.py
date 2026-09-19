@@ -9,8 +9,9 @@ from datetime import date, datetime, timezone
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
+from v18_selection import WEIGHTS, build_acca, score_selection
 
-st.set_page_config(page_title="Craig's Football Predictor V17.1", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V18", page_icon="📈", layout="wide")
 
 
 
@@ -134,7 +135,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V17.1</span>
+ <span class="v14-chip">V18</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -171,7 +172,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V17.1</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V18</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -180,7 +181,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 
 st.markdown("""
 <style>
-/* V17.1 FINISH — presentation-only layer. Prediction and validation logic unchanged. */
+/* V18 — manual-selection scoring and fail-closed acca builder. */
 :root{--vbg:#030912;--vpanel:#081522;--vpanel2:#0b1d2d;--vline:#16354b;--vgreen:#20e884;--vblue:#22a8ff;--vmuted:#8ea4b8}
 .stApp{background:radial-gradient(700px 330px at 50% -100px,rgba(32,232,132,.16),transparent 58%),linear-gradient(180deg,#06131f 0%,#020811 72%)!important}
 .block-container{max-width:860px!important;padding-top:.55rem!important;padding-bottom:6.5rem!important}
@@ -977,6 +978,11 @@ with pc2:
     max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
     topn=st.number_input("Show top predictions",min_value=3,max_value=20,value=10,step=1)
     day=st.date_input("Match date",date.today())
+ac1,ac2=st.columns(2)
+with ac1:
+    acca_stake=st.number_input("Acca stake (£)",min_value=1.0,max_value=1000.0,value=10.0,step=1.0)
+with ac2:
+    acca_target_return=st.number_input("Target total return (£)",min_value=10.0,max_value=100000.0,value=500.0,step=10.0)
 
 # --- V16 live validation ledger -------------------------------------------------
 LEDGER_COLUMNS=[
@@ -1227,7 +1233,11 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     if not out:
         st.info("No supported OpenFootball fixtures were found for that date.")
         st.stop()
-    d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
+    d=pd.DataFrame(out)
+    d["V18 audit"]=[score_selection(r) for r in d.to_dict("records")]
+    d["Selection score"]=[a["score"] for a in d["V18 audit"]]
+    d["Tier"]=[a["tier"] for a in d["V18 audit"]]
+    d=d.sort_values(["Selection score","Confidence %"],ascending=False)
     _record_live_bets(d)
 
     # V17 CLEAN PICKS DASHBOARD — answer first, detail on demand.
@@ -1298,9 +1308,27 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
             st.write(f'Goals for/against: {hh.get("gf","—")}/{hh.get("ga","—")} • {aa.get("gf","—")}/{aa.get("ga","—")}')
             sc=ctx.get("scorelines",[])
             if sc: st.write("Likely scores: "+" • ".join(x["score"] for x in sc[:3]))
+        audit=r.get("V18 audit")
+        if isinstance(audit,dict):
+            st.markdown(f'**V18 selection score:** {audit.get("score",0):.1f}/100 · **Tier:** {audit.get("tier","—")}')
+            component_labels={
+                "model_probability":"Model probability", "goals_profile":"Scoring-rate profile*",
+                "recent_venue_form":"Recent + venue form", "market_value":"Bookmaker value",
+                "availability_evidence":"Lineup/injury evidence", "opponent_strength":"Opponent strength",
+                "supporting_indicators":"Supporting indicators",
+            }
+            component_rows=[]
+            for key,weight in WEIGHTS.items():
+                component_rows.append({"Evidence component":component_labels[key],"Weight":f"{weight}%","Component score":audit["components"][key]})
+            st.dataframe(pd.DataFrame(component_rows),hide_index=True,use_container_width=True)
+            st.caption("*Scoring-rate proxy from completed-match goals; it is not provider-supplied xG.")
+            if audit.get("positives"): st.success("Supports pick: "+" • ".join(audit["positives"]))
+            if audit.get("concerns"): st.warning("Concerns: "+" • ".join(audit["concerns"]))
+            if audit.get("penalties"):
+                st.caption("Risk penalties: "+" • ".join(f'-{p["points"]} {p["reason"]}' for p in audit["penalties"]))
         st.caption(r.get("Decision reason", ""))
 
-    # V17.1 THREE-LENS DASHBOARD — three simple questions, detail only on demand.
+    # V18 retains the simple V17.1 lenses beneath the new audited shortlist.
     def _context_signal_v171(r):
         ctx=r.get("Context")
         if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
@@ -1345,8 +1373,44 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     .v171-badges{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0 8px}.v171-badge{border:1px solid #28465d;border-radius:999px;padding:4px 8px;font-size:.72rem;font-weight:850;color:#cbd9e5}.v171-good{border-color:#1f7d55;color:#65efaa}.v171-hot{border-color:#8b6d18;color:#ffd66d}.v171-reason{font-size:.86rem;color:#c5d3df;line-height:1.4}.v171-empty{border:1px dashed #28465d;border-radius:16px;padding:14px;color:#91a8bc;margin-bottom:8px}
     @media(max-width:520px){.v171-card{padding:13px 14px}.v171-team{font-size:1.12rem}.v171-prob{font-size:1.42rem}}
     </style>
-    <div class="v171-head"><h2>Today's selections</h2><p>Three simple views. Tap a match only when you want the full analysis.</p></div>
+    <div class="v171-head"><h2>🎯 Craig's Acca Shortlist</h2><p>Probability + form + scoring profile + verified value − uncertainty penalties.</p></div>
     """,unsafe_allow_html=True)
+
+    tier_order=["ELITE","STRONG","WATCHLIST","REJECT"]
+    tier_counts=d["Tier"].value_counts()
+    tc=st.columns(4)
+    for col,tier in zip(tc,tier_order): col.metric(tier.title(),int(tier_counts.get(tier,0)))
+
+    ranked=d[d["Pick"].isin(["HOME","AWAY"])].sort_values(["Selection score","Confidence %"],ascending=False).head(int(topn))
+    for pos,(_,r) in enumerate(ranked.iterrows(),1):
+        audit=r["V18 audit"]; team=_team_for_pick(r); price=_price_for(r)
+        tier_class="v171-good" if audit["tier"]=="ELITE" else "v171-hot" if audit["tier"]=="STRONG" else ""
+        badge=f'<span class="v171-badge {tier_class}">{html.escape(audit["tier"])}</span>'
+        price_badge=f'<span class="v171-badge">Odds {html.escape(price)}</span>' if price!="—" else '<span class="v171-badge">Odds not verified</span>'
+        reason=(audit["positives"][0] if audit["positives"] else audit["concerns"][0] if audit["concerns"] else r.get("Decision reason",""))
+        card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Match"]))+' • '+html.escape(str(r.get("Kickoff UK","")))+'</div></div><div class="v171-prob">'+f'{audit["score"]:.0f}'+'<small>selection score</small></div></div><div class="v171-badges">'+badge+price_badge+'<span class="v171-badge">'+html.escape(str(r.get("Decision","")))+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
+        st.markdown(card,unsafe_allow_html=True)
+        with st.expander("See full V18 evidence",expanded=False): _detail_panel(r)
+
+    target_odds=acca_target_return/acca_stake
+    acca=build_acca(d.to_dict("records"),target_odds=target_odds,min_legs=4,max_legs=7)
+    st.markdown('<div class="v171-lens">🧾 Auto-built acca</div>',unsafe_allow_html=True)
+    if acca["status"]=="READY":
+        acca_rows=[]
+        for leg in acca["legs"]:
+            audit=leg["V18 audit"]
+            team=leg["Home team"] if leg["Pick"]=="HOME" else leg["Away team"]
+            acca_rows.append({"Team to win":_short_team(team),"Match":leg["Match"],"Kickoff":leg.get("Kickoff UK"),"Best verified odds":leg.get("Best market odds"),"V18 score":audit["score"]})
+        st.dataframe(pd.DataFrame(acca_rows),hide_index=True,use_container_width=True)
+        payout=acca_stake*acca["combined_odds"]
+        a1,a2,a3=st.columns(3)
+        a1.metric("Legs",len(acca["legs"])); a2.metric("Combined odds",f'{acca["combined_odds"]:.2f}'); a3.metric("Theoretical return",f'£{payout:,.2f}')
+        st.success(f'Every leg is an outright winner marked ELITE, with a verified current price and a BET decision. Target was {target_odds:.2f} decimal.')
+    else:
+        st.warning("NO ACCA BUILT — "+acca["reason"]+" V18 will not add weaker or unverified legs just to reach the requested return.")
+    st.caption("V18 cannot verify injuries, confirmed lineups or true xG until those providers are connected. Missing evidence reduces the score and is shown inside each match audit.")
+
+    st.markdown('<div class="v171-head"><h2>Supporting views</h2><p>Probability and value lenses retained for comparison.</p></div>',unsafe_allow_html=True)
 
     likely=d[d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
     value=d[d["Decision"].eq("BET")].copy()
@@ -1387,7 +1451,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not st.session_state.get("odds_key","").strip(): st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V17.1 three-lens rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V18 rule: an acca leg must be an outright winner rated ELITE and BET. That requires a matched current UK 1X2 price, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Missing evidence lowers the selection score; rules are never loosened to fill an acca.")
 
 st.markdown("""
 <div class="v14-nav">
