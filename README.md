@@ -1,63 +1,74 @@
-# Craig's Football Predictor V23 — Production Candidate
+# Craig's Football Predictor V24 — Fast Production
 
-V23 is the production-oriented continuation of V21/V22. It keeps full-fixture,
-probability-first ranking and upgrades both statistical validation and data plumbing.
+V24 fixes the V23 performance bottleneck without throwing away the deeper
+validation and premium-data capability.
 
-## Active core improvements
+## Normal app use — fast path
 
-- Four-model league-specific ensemble
-- 70/15/15 chronological TRAIN / TUNE / FINAL TEST architecture
-- Final test is untouched by model-weight, time-decay and calibration selection
-- Per-league recency half-life selection
-- Empirical-Bayes style small-sample shrinkage
-- Opponent-adjusted performance-versus-expectation
-- Venue form, rest and 14-day congestion
-- Temperature probability calibration
-- Automatic fallback to the previous conservative engine when V23 does not improve final-test log loss
-- Historical Top-10 rank strike-rate audit
-- Historical Safest-Five product audit on matchdays with 5+ fixtures
-- Full fixture ranking: missing odds never removes a future fixture
-- No EV or +4pp edge ranking gates
+On an ordinary Today / Saturday / Next 7 Days run, V24:
 
-## Bookmaker consensus as a predictive input
+1. fetches current fixtures and odds
+2. loads/fits one cached recency-weighted live model per active league
+3. ranks every unfinished fixture
+4. shows the Top 10 and Safest Five
+5. calculates the target acca only where current prices exist
 
-V23 does not hard-code a market weight. The existing validation ledger is used
-to learn a binary selected-team blender from model probability + de-margined
-market probability. It requires at least 50 settled observations and is promoted
-only if a chronological holdout beats model-only log loss.
+It does **not** run the expensive multi-model TRAIN/TUNE/FINAL TEST process on
+every normal screen refresh.
 
-## Optional external enrichment
+## Deep validation — on demand
 
-Set `API_FOOTBALL_KEY` in Streamlit Community Cloud Secrets to enable the
-API-Football connector. For the strongest current candidates V23 can:
+Open **Engine & data connections** and press:
 
-- verify fixture identity
-- retrieve verified injuries
-- retrieve confirmed line-ups when published
-- calculate rolling **provider expected goals (xG/xGA)** from completed fixture statistics
-- apply a bounded xG/context second-stage blend
+`RUN / REFRESH DEEP VALIDATION`
 
-If the provider is missing, ambiguous or does not supply xG, the base model is
-left untouched. The app never substitutes a goals-rate proxy and calls it true xG.
+This runs the full production audit for the active leagues:
+- four candidate models
+- 70/15/15 chronological TRAIN / TUNE / untouched FINAL TEST
+- recency half-life selection
+- learned ensemble weights
+- probability calibration
+- legacy-model comparison
+- Top-10 rank historical audit
+- Safest-Five historical audit
 
-`ODDS_API_KEY` remains the current-price source. Current odds are used for
-stake/target return calculations; they do not gate future fixtures from Top 10.
+Successful results are cached in the current Streamlit process/session and then
+replace the fast model for subsequent rankings.
 
-## Supported domestic competitions
+## API-Football — second data service
 
-- Premier League
-- Championship
-- Bundesliga
-- La Liga
-- Serie A
-- Ligue 1
+The second service is **API-Football**. It supplies the richer context that the
+basic fixture/odds feeds cannot reliably provide:
 
-## Secrets
+- provider expected goals (when exposed in fixture statistics)
+- verified injuries
+- confirmed line-ups
+- fixture/team identity
+
+It is deliberately **on-demand** in V24. Connect it in either of two ways:
+
+### Permanent
+Add to Streamlit Community Cloud → App → Settings → Secrets:
 
 ```toml
-ODDS_API_KEY = "..."
-API_FOOTBALL_KEY = "..."   # optional premium enrichment
+ODDS_API_KEY = "your Odds API key"
+API_FOOTBALL_KEY = "your API-Football key"
 ```
 
-No model can guarantee a football result. V23 is designed to make probability
-estimation and validation more rigorous, not to claim certainty.
+### Temporary session
+Open **Engine & data connections** inside the app, paste the API-Football key and
+press **CONNECT API-FOOTBALL**.
+
+Then press **REFRESH XG / INJURIES / LINE-UPS** whenever you want the premium
+context pass. It never blocks the initial Top 10.
+
+## Existing product rules preserved
+
+- no positive-EV ranking gate
+- no +4pp edge ranking gate
+- future fixtures can rank before current odds are published
+- finished/stale matches remain hidden
+- current prices are required only for live inclusion and target-return maths
+- bookmaker/model blending is learned from settled history, never given an arbitrary weight
+
+No probability model guarantees a football result.

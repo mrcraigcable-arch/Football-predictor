@@ -194,7 +194,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
         game_state=str(row.get("Game state") or _kickoff_state(row.get("Kickoff ISO"))["state"]).upper()
         live_market_prob=_v18_number(row.get("Market fair %"))
         ranking_prob=(live_market_prob/100.0) if game_state=="LIVE" and live_market_prob is not None and 0<live_market_prob<100 else (prob/100.0 if prob is not None else None)
-        # V23 probability-first rule: do not exclude a bettable favourite because
+        # V24 probability-first rule: do not exclude a bettable favourite because
         # it lacks positive EV, a +4pp edge, eight bookmakers, or perfect market
         # agreement. Those are advisory diagnostics only. The hard gates are:
         # exact fixture match, a valid current 1X2 price, and an actionable game.
@@ -229,7 +229,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest model-estimated joint probability among combinations reaching the target. The multiplication assumes match independence; V23 separately audits Safest-Five historical hit rates." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V23 Production", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V24 Fast Production", page_icon="📈", layout="wide")
 
 
 
@@ -353,7 +353,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V23 PRODUCTION</span>
+ <span class="v14-chip">V24 FAST PRODUCTION</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Nitrous-inspired dashboard styling with evidence-backed football decisions. • Real market comparison</div></div></div>
@@ -390,7 +390,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V23 PRODUCTION</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V24 FAST PRODUCTION</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -445,7 +445,7 @@ hr{border-color:#173247!important}
 
 st.markdown("""
 <style>
-/* --- V23 PRODUCTION EDITION VISUAL LAYER --------------------------------------- */
+/* --- V24 FAST PRODUCTION EDITION VISUAL LAYER --------------------------------------- */
 :root{
   --street-bg:#04070d; --street-panel:#0a1119; --street-panel2:#101924;
   --street-line:#243446; --street-text:#f4f8ff; --street-muted:#9db0c2;
@@ -575,7 +575,7 @@ div[data-testid="stMetricValue"]{color:#fff!important}
 }
 </style>
 <div style="margin:-2px 0 12px; padding:10px 14px; border-radius:16px; border:1px solid rgba(255,138,29,.22); background:linear-gradient(90deg, rgba(255,138,29,.08), rgba(43,231,255,.06)); color:#c8d7e7; font-size:.88rem;">
-  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V23 production-grade validation + full-fixture ranking: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
+  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V24 fast-path production + on-demand deep validation: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
 </div>
 """, unsafe_allow_html=True)
 
@@ -959,8 +959,8 @@ def _rank_product_backtest(frame, prob):
     return {"rank_rows":rank_rows,"safest_five":safest}
 
 @st.cache_resource(show_spinner=False)
-def train(lname,code):
-    """V23 production validation: TRAIN -> TUNE -> untouched FINAL TEST."""
+def deep_validate_model(lname,code):
+    """V24 deep validation: TRAIN -> TUNE -> untouched FINAL TEST. Runs only on demand."""
     f,hist,elo,used=make_training(code)
     if len(f)<240:
         raise RuntimeError(f"Only {len(f)} completed historical matches available; V23 needs at least 240 for a clean three-way split.")
@@ -1076,6 +1076,84 @@ def train(lname,code):
     )
     return model,hist,elo,used,engine_label,validation_status,validation_evidence,meta
 
+@st.cache_resource(show_spinner=False)
+def train_fast_live(lname, code):
+    """Fast production path.
+
+    Fits one conservative, recency-weighted model on all completed history.
+    This path is deliberately lightweight so the Top 10 can appear quickly.
+    Full ensemble selection/calibration remains available through the on-demand
+    deep validation control and is cached once run.
+    """
+    f,hist,elo,used=make_training(code)
+    if len(f)<180:
+        raise RuntimeError(f"Only {len(f)} completed historical matches available.")
+    weights=_time_decay_weights(f,540.0)
+    model=HistGradientBoostingClassifier(
+        max_iter=110,max_leaf_nodes=9,learning_rate=.045,
+        min_samples_leaf=34,l2_regularization=8,random_state=42)
+    model.fit(f[FEATURES].fillna(0),f["y"],sample_weight=weights)
+    meta={
+        "League":lname,
+        "Engine":"V24 FAST LIVE",
+        "Training matches":int(len(f)),
+        "Recency half-life days":540,
+        "Mode":"Fast cached live model",
+    }
+    return model,hist,elo,used,"V24 FAST LIVE","FAST LIVE",\
+        f"Fast recency-weighted production model fitted on {len(f)} completed matches.",meta
+
+def _validated_session_models():
+    if "v24_validated_models" not in st.session_state:
+        st.session_state["v24_validated_models"]={}
+    return st.session_state["v24_validated_models"]
+
+def get_live_model(lname,code):
+    """Use a validated V23/V24 deep model when one has been run this session;
+    otherwise use the fast cached production model immediately."""
+    pool=_validated_session_models()
+    if lname in pool:
+        return pool[lname]
+    return train_fast_live(lname,code)
+
+def fast_fixture_context(hist, home, away, fixture_date):
+    """Cheap context derived from the already-built training state.
+
+    Avoids rescanning the entire current season for every fixture. Full/deeper
+    context is refreshed only for the displayed Top 10.
+    """
+    hs=_team_live_features(hist,home,"H",fixture_date)
+    aa=_team_live_features(hist,away,"A",fixture_date)
+    def snap(x):
+        return {
+            "position":None,
+            "played":x.get("sample_n"),
+            "points":None,
+            "form":"—",
+            "ppg":round(float(x.get("pts",0)),2),
+            "gf":round(float(x.get("gf",0)),2),
+            "ga":round(float(x.get("ga",0)),2),
+            "clean_sheet":None,
+            "btts":None,
+            "venue_form":"—",
+            "venue_ppg":round(float(x.get("venue_ppg",0)),2),
+            "opp_adj_ppg":round(float(x.get("opp_adj_ppg",0)),2),
+            "perf_vs_expect":round(float(x.get("perf_vs_expect",0)),3),
+            "rest_days":round(float(x.get("rest_days",7)),1),
+            "games14":int(x.get("games14",0)),
+        }
+    hsn,asn=snap(hs),snap(aa)
+    lh=max(.15,(hsn["gf"]+asn["ga"])/2)
+    la=max(.15,(asn["gf"]+hsn["ga"])/2)
+    return {
+        "available":True,"home":hsn,"away":asn,
+        "xg_like_home":round(lh,2),"xg_like_away":round(la,2),
+        "scorelines":[],
+        "injuries":"UNAVAILABLE — deep provider refresh not run",
+        "context_mode":"fast",
+    }
+
+
 @st.cache_data(ttl=1800,show_spinner=False)
 def fixtures_for(code):
     return season_json("2026-27",code)["matches"]
@@ -1091,6 +1169,9 @@ API_FOOTBALL_LEAGUES={
 }
 
 def _streamlit_api_football_secret():
+    override=str(st.session_state.get("api_football_key_override","")).strip()
+    if override:
+        return override
     try:
         return str(st.secrets.get("API_FOOTBALL_KEY","")).strip()
     except Exception:
@@ -1877,8 +1958,45 @@ else:
             st.session_state.pop("odds_key_override",None)
             st.rerun()
 
+
+with st.expander("⚡ Engine & data connections",expanded=False):
+    st.caption("Normal use is fast: cached live models first. Deep model validation and premium xG/injury/line-up refresh are separate so they never block the first Top 10.")
+    _c1,_c2=st.columns(2)
+    with _c1:
+        st.markdown("**Deep engine validation**")
+        st.caption("Runs the expensive TRAIN → TUNE → FINAL TEST process only when you choose. Successful results are cached for this session and then used by the live ranking.")
+        if st.button("RUN / REFRESH DEEP VALIDATION",use_container_width=True,key="v24_run_deep"):
+            st.session_state["v24_deep_requested"]=True
+    with _c2:
+        st.markdown("**API-Football enrichment**")
+        _af_now=_streamlit_api_football_secret()
+        st.caption("Used for true provider xG, injuries and line-ups. It is optional and never blocks the base ranking.")
+        _af_entry=st.text_input(
+            "API-Football key",
+            value="",
+            type="password",
+            placeholder="Paste API-Football key",
+            key="v24_api_football_entry"
+        )
+        b1,b2=st.columns(2)
+        with b1:
+            if st.button("CONNECT API-FOOTBALL",use_container_width=True,key="v24_af_connect"):
+                if _af_entry.strip():
+                    st.session_state["api_football_key_override"]=_af_entry.strip()
+                    st.success("API-Football connected for this session.")
+                    st.rerun()
+                else:
+                    st.warning("Paste the API-Football key first.")
+        with b2:
+            if st.button("CLEAR API-FOOTBALL",use_container_width=True,key="v24_af_clear"):
+                st.session_state.pop("api_football_key_override",None)
+                st.rerun()
+        st.write("Status: "+("✅ Connected" if _af_now else "⚪ Not connected"))
+        if _af_now and st.button("REFRESH XG / INJURIES / LINE-UPS",use_container_width=True,key="v24_provider_refresh"):
+            st.session_state["v24_provider_refresh_requested"]=True
+
 st.markdown("### 🏁 Probability-first mode")
-st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. Current odds are helpful, not a gate. No positive-EV gate and no +4pp edge gate. V22 ranks teams using a league-specific ensemble trained with recency weighting, opponent-adjusted form, venue form, rest and fixture congestion.")
+st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. No positive-EV or +4pp edge gate. V24 loads a cached fast production model first; deep ensemble validation and premium xG/injury/line-up enrichment run only when you request them, so they no longer hold up the Top 10.")
 with st.expander("What changed in the V22 prediction engine?",expanded=False):
     st.markdown("""
 **V23 does not simply add more filters.** It tries to improve the probability itself.
@@ -2160,7 +2278,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V23 • PRODUCTION ENGINE — richer football features, time-decay training, chronological model competition and probability calibration.")
+st.info("V24 • FAST PRODUCTION ENGINE — richer football features, time-decay training, chronological model competition and probability calibration.")
 
 if True:
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -2212,7 +2330,11 @@ if True:
                     games.append((_m,_match_day))
             if not games: continue
             try:
-                model,hist,elo,ntrain,engine_label,validation_status,validation_evidence,engine_meta=train(lname,code)
+                if st.session_state.get("v24_deep_requested",False):
+                    with st.spinner(f"Deep-validating {lname} once and caching the result..."):
+                        _deep=deep_validate_model(lname,code)
+                    _validated_session_models()[lname]=_deep
+                model,hist,elo,ntrain,engine_label,validation_status,validation_evidence,engine_meta=get_live_model(lname,code)
                 engine_diagnostics.append(engine_meta)
             except Exception as e:
                 warnings.append(f"{lname}: model unavailable ({e})")
@@ -2288,7 +2410,7 @@ if True:
                     edge=conf-mprob
                     ev=conf*best_odd-1
 
-                context = fixture_context(code, match_day, h, a)
+                context = fast_fixture_context(hist, h, a, pd.to_datetime(match_day))
                 secondary_checks=[]
 
                 # V22: probability ranking and market verification are separate.
@@ -2329,6 +2451,9 @@ if True:
                             "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence,"Secondary checks":secondary_checks,"Context":context})
+    if st.session_state.get("v24_deep_requested",False):
+        st.session_state["v24_deep_requested"]=False
+
     if warnings:
         with st.expander("Data/model warnings"):
             for w in warnings: st.warning(w)
@@ -2345,13 +2470,16 @@ if True:
 
     if engine_diagnostics:
         with st.expander("🧪 V23 engine stress test — chronological unseen matches",expanded=False):
-            st.caption("Each league uses three chronological blocks: TRAIN, TUNE/CALIBRATE and an untouched FINAL TEST. All model weights, recency decay and calibration are frozen before the final block. V23 promotes only when it beats the previous conservative engine on that untouched newest sample.")
+            st.caption("Fast mode returns predictions immediately. When you run Deep Validation, the selected leagues use TRAIN → TUNE/CALIBRATE → untouched FINAL TEST and cache the approved result for the rest of the session.")
             _eng=pd.DataFrame(engine_diagnostics)
-            _cols=["League","Engine","Train matches","Tune matches","Final test matches","Legacy log loss","V23 log loss","Accuracy %","Avg confidence %","Calibration gap pp","Time-decay half-life days","Temperature","Promoted"]
+            _cols=["League","Engine","Training matches","Train matches","Tune matches","Final test matches","Legacy log loss","V23 log loss","Accuracy %","Avg confidence %","Calibration gap pp","Recency half-life days","Time-decay half-life days","Temperature","Promoted"]
             st.dataframe(_eng[[c for c in _cols if c in _eng.columns]],hide_index=True,use_container_width=True)
             for meta in engine_diagnostics:
-                with st.expander(f'{meta["League"]} model weights + product backtest',expanded=False):
-                    st.json(meta.get("Ensemble weights",{}))
+                with st.expander(f'{meta["League"]} engine details',expanded=False):
+                    if meta.get("Ensemble weights"):
+                        st.json(meta.get("Ensemble weights",{}))
+                    else:
+                        st.caption("Fast live model active. Run Deep Validation to generate ensemble weights and untouched final-test product audits.")
                     _rr=meta.get("Rank audit") or []
                     if _rr:
                         st.caption("Top-10 rank strike rates on the untouched final test")
@@ -2372,10 +2500,11 @@ if True:
     # Premium external enrichment is intentionally limited to the strongest
     # candidates to control API usage. It activates automatically when the secret
     # exists and never fabricates a value when provider data is missing.
-    d["External data status"]="Not connected" if not api_football_key else "No provider match"
+    d["External data status"]="Not connected" if not api_football_key else "Connected — refresh on demand"
     d["External context"]=[[] for _ in range(len(d))]
-    if api_football_key:
-        candidate_idx=d.sort_values("Ranking %",ascending=False).head(12).index.tolist()
+    _provider_refresh=bool(api_football_key and st.session_state.get("v24_provider_refresh_requested",False))
+    if _provider_refresh:
+        candidate_idx=d.sort_values("Ranking %",ascending=False).head(10).index.tolist()
         for ridx in candidate_idx:
             r=d.loc[ridx]
             try:
@@ -2405,6 +2534,7 @@ if True:
                     d.at[ridx,"Probability source"]=str(d.at[ridx,"Probability source"])+" + provider context"
             except Exception as e:
                 d.at[ridx,"External data status"]=f"Provider error: {e}"
+        st.session_state["v24_provider_refresh_requested"]=False
 
     if d["Game state"].eq("LIVE").any():
         live_names=d.loc[d["Game state"].eq("LIVE"),["Match","Timing label"]].head(5)
@@ -2494,7 +2624,7 @@ if True:
         if audit.get("penalties"): st.caption("Risk penalties: "+" • ".join(f'-{p["points"]} {p["reason"]}' for p in audit["penalties"]))
         st.caption(r.get("Decision reason", ""))
 
-    # V23 PRODUCTION DASHBOARD — one clear question: who is most likely to win?
+    # V24 FAST PRODUCTION DASHBOARD — one clear question: who is most likely to win?
     def _context_signal_v171(r):
         ctx=r.get("Context")
         if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
@@ -2598,6 +2728,22 @@ if True:
     likely=_active[_active["Pick"].isin(["HOME","AWAY"])].sort_values("Ranking %",ascending=False).head(10)
     strongest_five=likely.head(5).copy()
 
+    # Deep local context only for the displayed Top 10. This preserves detail
+    # while avoiding a full-season rescan for every fixture in the date range.
+    for _idx,_r in likely.iterrows():
+        try:
+            _ctx=fixture_context(
+                LEAGUES[_r["League"]]["of"],
+                pd.to_datetime(_r["Match date"]),
+                _r["Home team"],_r["Away team"]
+            )
+            d.at[_idx,"Context"]=_ctx
+            likely.at[_idx,"Context"]=_ctx
+            if _idx in strongest_five.index:
+                strongest_five.at[_idx,"Context"]=_ctx
+        except Exception:
+            pass
+
     def _render_clean_rows(frame,lens):
         if frame.empty:
             msg="No unfinished win selections are available in this fixture window."
@@ -2649,10 +2795,10 @@ if True:
 with st.expander("🔌 Advanced data providers",expanded=False):
     _af=_streamlit_api_football_secret()
     st.write("**API-Football enrichment:** "+("✅ Connected" if _af else "⚪ Not connected"))
-    st.caption("When API_FOOTBALL_KEY is present in Streamlit Secrets, V23 attempts to match the strongest current fixtures, retrieve verified injuries/confirmed line-ups and rolling provider expected-goals statistics, and apply a bounded second-stage context blend. If data is unavailable or fixture identity is ambiguous, the base probability is left untouched.")
+    st.caption("API-Football is now on-demand. Connect API_FOOTBALL_KEY once, then use REFRESH XG / INJURIES / LINE-UPS when you want the premium pass. It never blocks the initial Top 10 and never invents missing data.")
     st.write("**The Odds API:** "+("✅ Connected" if (_streamlit_odds_secret() or st.session_state.get("odds_key_override")) else "⚪ Not connected"))
     st.caption("Current prices feed return calculations immediately. Predictive market blending is never assigned a hand-picked weight: V23 learns it from settled ledger history and activates it only after chronological holdout improvement.")
 
 st.divider()
-st.caption("V23 Production: full-fixture ranking + chronologically validated ensemble. Finished/stale fixtures stay hidden. Future unfinished fixtures can rank before odds are verified. Prices are required only for live inclusion and target-return calculations. No model can guarantee outcomes; probabilities are validated estimates.")
+st.caption("V24 Fast Production: fast cached rankings first; expensive validation and premium enrichment are on-demand and cached. Full-fixture ranking remains intact. Finished/stale fixtures stay hidden. No model can guarantee outcomes.")
 
