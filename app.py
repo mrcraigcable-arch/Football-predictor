@@ -229,7 +229,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest model-estimated joint probability among combinations reaching the target. The multiplication assumes match independence; V23 separately audits Safest-Five historical hit rates." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V24 Fast Production", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V25 Analyst Engine", page_icon="📈", layout="wide")
 
 
 
@@ -353,7 +353,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V24 FAST PRODUCTION</span>
+ <span class="v14-chip">V25 ANALYST ENGINE</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Nitrous-inspired dashboard styling with evidence-backed football decisions. • Real market comparison</div></div></div>
@@ -390,7 +390,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V24 FAST PRODUCTION</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V25 ANALYST ENGINE</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -445,7 +445,7 @@ hr{border-color:#173247!important}
 
 st.markdown("""
 <style>
-/* --- V24 FAST PRODUCTION EDITION VISUAL LAYER --------------------------------------- */
+/* --- V25 ANALYST ENGINE EDITION VISUAL LAYER --------------------------------------- */
 :root{
   --street-bg:#04070d; --street-panel:#0a1119; --street-panel2:#101924;
   --street-line:#243446; --street-text:#f4f8ff; --street-muted:#9db0c2;
@@ -575,7 +575,7 @@ div[data-testid="stMetricValue"]{color:#fff!important}
 }
 </style>
 <div style="margin:-2px 0 12px; padding:10px 14px; border-radius:16px; border:1px solid rgba(255,138,29,.22); background:linear-gradient(90deg, rgba(255,138,29,.08), rgba(43,231,255,.06)); color:#c8d7e7; font-size:.88rem;">
-  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V24 fast-path production + on-demand deep validation: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
+  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V25 analyst ranking + on-demand verified pass: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
 </div>
 """, unsafe_allow_html=True)
 
@@ -612,7 +612,7 @@ FEATURES=[
     "h_games14","a_games14",
 ]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV22/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV25/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -782,6 +782,52 @@ def make_training(code,w=8):
     if not frame.empty:
         frame=frame.sort_values("_date").reset_index(drop=True)
     return frame,hist,elo,used
+
+
+FAST_SEASONS=["2024-25","2025-26","2026-27"]
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def make_training_fast(code,w=8):
+    """Low-latency live training frame.
+
+    Uses the latest three seasons only. Deep validation still uses the full
+    historical archive, but ordinary rankings do not download/process nine
+    seasons before showing anything.
+    """
+    hist=defaultdict(lambda:deque(maxlen=20))
+    elo=defaultdict(lambda:1500.0)
+    rows=[]; used=0
+    for season in FAST_SEASONS:
+        try:
+            matches=season_json(season,code)["matches"]
+        except Exception:
+            continue
+        for m in sorted(matches,key=lambda x:str(x.get("date",""))):
+            sc=score_ft(m)
+            if sc is None: continue
+            h=team_name(m.get("team1","")).strip()
+            a=team_name(m.get("team2","")).strip()
+            if not h or not a: continue
+            dt=pd.to_datetime(m.get("date"),errors="coerce")
+            if pd.isna(dt): continue
+            hg,ag=sc; eh,ea=float(elo[h]),float(elo[a])
+            vals=build_feature_values(hist,elo,h,a,dt)
+            if hg>ag: y=0; hp,ap,res=3,0,1.0
+            elif hg<ag: y=2; hp,ap,res=0,3,0.0
+            else: y=1; hp,ap,res=1,1,0.5
+            rows.append({**vals,"y":y,"_date":dt,"_home":h,"_away":a})
+            ex_home=elo_p(eh+55-ea); ex_away=1.0-ex_home
+            hist[h].append({"pts":hp,"gf":hg,"ga":ag,"venue":"H","opp_elo":ea,"date":dt,
+                            "result_score":res,"expected_score":ex_home})
+            hist[a].append({"pts":ap,"gf":ag,"ga":hg,"venue":"A","opp_elo":eh,"date":dt,
+                            "result_score":1.0-res,"expected_score":ex_away})
+            ex=elo_p(eh-ea)
+            elo[h]+=24*(res-ex); elo[a]+=24*((1-res)-(1-ex))
+            used+=1
+    f=pd.DataFrame(rows)
+    if not f.empty:
+        f=f.sort_values("_date").reset_index(drop=True)
+    return f,hist,elo,used
 
 def _time_decay_weights(frame, half_life_days=540.0):
     if "_date" not in frame.columns or frame.empty:
@@ -960,10 +1006,10 @@ def _rank_product_backtest(frame, prob):
 
 @st.cache_resource(show_spinner=False)
 def deep_validate_model(lname,code):
-    """V24 deep validation: TRAIN -> TUNE -> untouched FINAL TEST. Runs only on demand."""
+    """V25 deep validation: TRAIN -> TUNE -> untouched FINAL TEST. Runs only on demand."""
     f,hist,elo,used=make_training(code)
     if len(f)<240:
-        raise RuntimeError(f"Only {len(f)} completed historical matches available; V23 needs at least 240 for a clean three-way split.")
+        raise RuntimeError(f"Only {len(f)} completed historical matches available; V25 needs at least 240 for a clean three-way split.")
 
     n=len(f)
     train_end=max(160,int(n*.70))
@@ -1038,7 +1084,7 @@ def deep_validate_model(lname,code):
         full_fitted=_fit_candidate_models(f,full_w)
         members=[(model,cols) for _,model,cols in full_fitted]
         model=V22ProbabilityEnsemble(members,raw_weights,temperature)
-        engine_label="V23 VALIDATED ENSEMBLE"
+        engine_label="V25 VALIDATED ENSEMBLE"
         chosen_loss=final_loss
     else:
         legacy_full=HistGradientBoostingClassifier(
@@ -1046,7 +1092,7 @@ def deep_validate_model(lname,code):
             min_samples_leaf=38,l2_regularization=8,random_state=42)
         legacy_full.fit(f[FEATURES].fillna(0),f["y"],sample_weight=full_w)
         model=legacy_full
-        engine_label="V23 LEGACY SAFETY FALLBACK"
+        engine_label="V25 LEGACY SAFETY FALLBACK"
         chosen_loss=legacy_loss
 
     weights_map={name:round(float(w),3) for (name,_),w in zip(tune_losses,raw_weights)}
@@ -1057,7 +1103,7 @@ def deep_validate_model(lname,code):
         "Tune matches":int(len(tune_set)),
         "Final test matches":int(len(test_set)),
         "Legacy log loss":round(legacy_loss,4),
-        "V23 log loss":round(float(chosen_loss),4),
+        "V25 log loss":round(float(chosen_loss),4),
         "Accuracy %":round(acc*100,1),
         "Avg confidence %":round(avg_conf*100,1),
         "Calibration gap pp":round(calibration_gap,1),
@@ -1068,7 +1114,7 @@ def deep_validate_model(lname,code):
         "Rank audit":product_audit["rank_rows"],
         "Safest-five audit":product_audit["safest_five"],
     }
-    validation_status="V23 PROMOTED" if promote else "V23 FALLBACK"
+    validation_status="V25 PROMOTED" if promote else "V25 FALLBACK"
     validation_evidence=(
         f"Untouched final test: legacy log loss {legacy_loss:.4f}; "
         f"candidate {final_loss:.4f}; {len(test_set)} newest unseen matches. "
@@ -1080,36 +1126,40 @@ def deep_validate_model(lname,code):
 def train_fast_live(lname, code):
     """Fast production path.
 
-    Fits one conservative, recency-weighted model on all completed history.
+    Fits one conservative, recency-weighted model on the latest three seasons.
     This path is deliberately lightweight so the Top 10 can appear quickly.
     Full ensemble selection/calibration remains available through the on-demand
     deep validation control and is cached once run.
     """
-    f,hist,elo,used=make_training(code)
-    if len(f)<180:
-        raise RuntimeError(f"Only {len(f)} completed historical matches available.")
+    f,hist,elo,used=make_training_fast(code)
+    if len(f)<120:
+        raise RuntimeError(f"Only {len(f)} recent completed matches available for fast mode.")
     weights=_time_decay_weights(f,540.0)
     model=HistGradientBoostingClassifier(
-        max_iter=110,max_leaf_nodes=9,learning_rate=.045,
-        min_samples_leaf=34,l2_regularization=8,random_state=42)
+        max_iter=75,max_leaf_nodes=7,learning_rate=.05,
+        min_samples_leaf=30,l2_regularization=8,random_state=42)
     model.fit(f[FEATURES].fillna(0),f["y"],sample_weight=weights)
     meta={
         "League":lname,
-        "Engine":"V24 FAST LIVE",
+        "Engine":"V25 FAST LIVE",
         "Training matches":int(len(f)),
         "Recency half-life days":540,
         "Mode":"Fast cached live model",
     }
-    return model,hist,elo,used,"V24 FAST LIVE","FAST LIVE",\
-        f"Fast recency-weighted production model fitted on {len(f)} completed matches.",meta
+    return model,hist,elo,used,"V25 FAST LIVE","FAST LIVE",\
+        f"Fast recency-weighted production model fitted on {len(f)} recent completed matches.",meta
+
+@st.cache_resource(show_spinner=False)
+def _validated_model_registry():
+    # Survives ordinary Streamlit reruns and user sessions in the process.
+    # A full container restart safely falls back to the fast live model.
+    return {}
 
 def _validated_session_models():
-    if "v24_validated_models" not in st.session_state:
-        st.session_state["v24_validated_models"]={}
-    return st.session_state["v24_validated_models"]
+    return _validated_model_registry()
 
 def get_live_model(lname,code):
-    """Use a validated V23/V24 deep model when one has been run this session;
+    """Use a validated V25 deep model when one has been run this session;
     otherwise use the fast cached production model immediately."""
     pool=_validated_session_models()
     if lname in pool:
@@ -1193,6 +1243,30 @@ def _api_football_get(path, params, api_key):
         raise RuntimeError(f"API-Football error: {errs}")
     return payload.get("response",[]) if isinstance(payload,dict) else []
 
+@st.cache_data(ttl=86400,show_spinner=False)
+def api_football_coverage(lname, api_key):
+    """Read provider coverage before trusting empty injury/lineup/stat feeds."""
+    if not api_key or lname not in API_FOOTBALL_LEAGUES:
+        return {"available":False}
+    lid=API_FOOTBALL_LEAGUES[lname]
+    resp=_api_football_get("leagues",{"id":int(lid),"season":2026},api_key)
+    if not resp:
+        return {"available":False}
+    item=resp[0] if isinstance(resp[0],dict) else {}
+    seasons=item.get("seasons") or []
+    season=next((x for x in seasons if int(x.get("year",0) or 0)==2026), seasons[-1] if seasons else {})
+    cov=season.get("coverage") or {}
+    fx=cov.get("fixtures") or {}
+    return {
+        "available":True,
+        "injuries":bool(cov.get("injuries")),
+        "predictions":bool(cov.get("predictions")),
+        "players":bool(cov.get("players")),
+        "lineups":bool(fx.get("lineups")),
+        "fixture_statistics":bool(fx.get("statistics_fixtures")),
+        "player_statistics":bool(fx.get("statistics_players")),
+    }
+
 def _extract_stat(stats, name):
     target=str(name).casefold().replace(" ","_")
     for item in stats or []:
@@ -1216,6 +1290,7 @@ def api_football_fixture_context(lname, match_day, home, away, api_key):
     if not api_key or lname not in API_FOOTBALL_LEAGUES:
         return {"available":False,"reason":"API_FOOTBALL_KEY not connected"}
     league_id=API_FOOTBALL_LEAGUES[lname]
+    coverage=api_football_coverage(lname,api_key)
     date_s=pd.to_datetime(match_day).strftime("%Y-%m-%d")
     fixtures=_api_football_get("fixtures",{"league":league_id,"season":2026,"date":date_s},api_key)
 
@@ -1236,24 +1311,36 @@ def api_football_fixture_context(lname, match_day, home, away, api_key):
     if not fixture_id:
         return {"available":False,"reason":"Provider fixture has no ID"}
 
-    injuries=_api_football_get("injuries",{"fixture":fixture_id},api_key)
-    lineups=_api_football_get("fixtures/lineups",{"fixture":fixture_id},api_key)
+    injuries=_api_football_get("injuries",{"fixture":fixture_id},api_key) if coverage.get("injuries") else []
+    lineups=_api_football_get("fixtures/lineups",{"fixture":fixture_id},api_key) if coverage.get("lineups") else []
 
     home_inj=[]; away_inj=[]
     for x in injuries:
         team=(x.get("team") or {}).get("name","")
-        player=(x.get("player") or {}).get("name","")
-        reason=x.get("player",{}).get("reason") or x.get("reason") or ""
-        rec={"player":player,"reason":reason}
+        pobj=x.get("player") or {}
+        player=pobj.get("name","")
+        reason=pobj.get("reason") or x.get("reason") or ""
+        rec={"player":player,"player_id":pobj.get("id"),"reason":reason,
+             "type":x.get("type") or pobj.get("type") or "Unavailable"}
         if team_match(team,home): home_inj.append(rec)
         elif team_match(team,away): away_inj.append(rec)
 
-    confirmed={"home":None,"away":None}
+    confirmed={"home":None,"away":None}; confirmed_bench={"home":None,"away":None}
     for lu in lineups:
         tn=(lu.get("team") or {}).get("name","")
-        starters=[((p.get("player") or {}).get("name","")) for p in (lu.get("startXI") or [])]
-        if team_match(tn,home): confirmed["home"]=[x for x in starters if x]
-        elif team_match(tn,away): confirmed["away"]=[x for x in starters if x]
+        starters=[]; bench=[]
+        for p in (lu.get("startXI") or []):
+            pobj=p.get("player") or {}
+            if pobj.get("name"):
+                starters.append({"id":pobj.get("id"),"name":pobj.get("name"),"pos":pobj.get("pos")})
+        for p in (lu.get("substitutes") or []):
+            pobj=p.get("player") or {}
+            if pobj.get("name"):
+                bench.append({"id":pobj.get("id"),"name":pobj.get("name"),"pos":pobj.get("pos")})
+        if team_match(tn,home):
+            confirmed["home"]=starters or None; confirmed_bench["home"]=bench or None
+        elif team_match(tn,away):
+            confirmed["away"]=starters or None; confirmed_bench["away"]=bench or None
 
     # Current fixture stats usually appear only once a match starts; for a
     # pre-match fixture we explicitly do NOT call them "xG".
@@ -1262,7 +1349,9 @@ def api_football_fixture_context(lname, match_day, home, away, api_key):
         "home_team_id":ht.get("id"),"away_team_id":at.get("id"),
         "injuries":{"home":home_inj,"away":away_inj},
         "confirmed_lineup":confirmed,
+        "confirmed_bench":confirmed_bench,
         "lineups_confirmed":bool(confirmed["home"] and confirmed["away"]),
+        "coverage":coverage,
         "reason":"Verified provider fixture matched",
     }
 
@@ -1333,6 +1422,342 @@ def _external_context_adjustment(base_prob, home_xg, away_xg, pick, injuries, co
     if confirmed_lineup:
         details.append("confirmed line-ups available")
     return float(np.clip(p,.01,.99)),details
+
+
+def _pct_string(v):
+    try:
+        if isinstance(v,str): v=v.replace("%","").strip()
+        x=float(v)
+        return x if np.isfinite(x) else None
+    except Exception:
+        return None
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def api_football_prediction(fixture_id, api_key):
+    if not api_key or not fixture_id: return {"available":False}
+    resp=_api_football_get("predictions",{"fixture":int(fixture_id)},api_key)
+    if not resp: return {"available":False}
+    item=resp[0] if isinstance(resp[0],dict) else {}
+    pred=item.get("predictions") or {}; pct=pred.get("percent") or {}
+    return {"available":True,"home":_pct_string(pct.get("home")),"draw":_pct_string(pct.get("draw")),
+            "away":_pct_string(pct.get("away")),"winner":(pred.get("winner") or {}).get("name"),
+            "advice":pred.get("advice"),"comparison":item.get("comparison") or {}}
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def api_football_team_schedule_context(team_id, before_date, league_id, api_key):
+    if not api_key or not team_id: return {"available":False}
+    fixtures=_api_football_get("fixtures",{"team":int(team_id),"last":8,"status":"FT"},api_key)
+    cutoff=pd.to_datetime(before_date,utc=True,errors="coerce")
+    dates=[]; games14=0; other_comp14=0
+    for f in fixtures:
+        dt=pd.to_datetime((f.get("fixture") or {}).get("date"),utc=True,errors="coerce")
+        if pd.isna(dt) or (pd.notna(cutoff) and dt>=cutoff): continue
+        dates.append(dt)
+        if pd.notna(cutoff) and 0 <= (cutoff-dt).days <= 14:
+            games14+=1
+            try:
+                if int((f.get("league") or {}).get("id"))!=int(league_id): other_comp14+=1
+            except Exception: pass
+    if not dates: return {"available":False}
+    rest=(cutoff-max(dates)).total_seconds()/86400 if pd.notna(cutoff) else None
+    return {"available":True,"rest_days":round(float(rest),1) if rest is not None else None,
+            "games14":int(games14),"other_comp_games14":int(other_comp14)}
+
+def _player_importance_from_response(resp, team_id, league_id, team_played):
+    if not resp: return {"available":False}
+    item=resp[0] if isinstance(resp[0],dict) else {}; pobj=item.get("player") or {}; blocks=item.get("statistics") or []
+    chosen=None
+    for stx in blocks:
+        try:
+            if int((stx.get("team") or {}).get("id"))==int(team_id) and int((stx.get("league") or {}).get("id"))==int(league_id):
+                chosen=stx; break
+        except Exception: pass
+    if chosen is None:
+        for stx in blocks:
+            try:
+                if int((stx.get("team") or {}).get("id"))==int(team_id): chosen=stx; break
+            except Exception: pass
+    if chosen is None: return {"available":False,"player":pobj.get("name"),"player_id":pobj.get("id")}
+
+    games=chosen.get("games") or {}; goals=chosen.get("goals") or {}
+    appearances=float(games.get("appearences") or games.get("appearances") or 0)
+    starts=float(games.get("lineups") or 0); minutes=float(games.get("minutes") or 0); pos=str(games.get("position") or "")
+    try: rating=float(games.get("rating") or 0)
+    except Exception: rating=0.0
+    g=float(goals.get("total") or 0); a=float(goals.get("assists") or 0)
+    denom=max(float(team_played or 0),appearances,starts,1.0)
+    minute_share=float(np.clip(minutes/(denom*90.0),0,1)); start_share=float(np.clip(starts/denom,0,1))
+    rating_score=float(np.clip((rating-6.0)/1.5,0,1)) if rating>0 else 0.35
+    per90=(g+a)*90.0/max(minutes,90.0); p=pos.casefold()
+    if "goal" in p:
+        importance=65*minute_share+25*start_share+10*rating_score
+    elif "def" in p:
+        importance=55*minute_share+25*start_share+15*rating_score+5*float(np.clip(per90/.20,0,1))
+    elif "mid" in p:
+        importance=45*minute_share+25*start_share+15*rating_score+15*float(np.clip(per90/.50,0,1))
+    else:
+        importance=40*minute_share+25*start_share+15*rating_score+20*float(np.clip(per90/.75,0,1))
+    importance=float(np.clip(importance,0,100))
+    label="KEY" if importance>=70 else "IMPORTANT" if importance>=52 else "ROTATION" if importance>=30 else "DEPTH"
+    return {"available":True,"player":pobj.get("name"),"player_id":pobj.get("id"),"position":pos or "Unknown",
+            "importance":round(importance,1),"importance_label":label,"minutes":int(minutes),"starts":int(starts),
+            "appearances":int(appearances),"goals":int(g),"assists":int(a),"rating":round(rating,2) if rating else None}
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def api_football_player_importance(player_id, team_id, league_id, team_played, api_key):
+    if not api_key or not player_id: return {"available":False}
+    return _player_importance_from_response(_api_football_get("players",{"id":int(player_id),"season":2026},api_key),
+                                            team_id,league_id,team_played)
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def api_football_team_core_players(team_id, league_id, team_played, api_key):
+    if not api_key or not team_id: return []
+    out=[]
+    for page in (1,2,3):
+        batch=_api_football_get("players",{"team":int(team_id),"season":2026,"page":page},api_key)
+        if not batch: break
+        for item in batch:
+            imp=_player_importance_from_response([item],team_id,league_id,team_played)
+            if imp.get("available"): out.append(imp)
+        if len(batch)<20: break
+    unique={}
+    for x in out: unique[x.get("player_id")]=x
+    return sorted(unique.values(),key=lambda x:float(x.get("importance",0)),reverse=True)
+
+def _confirmed_lineup_rotation_summary(core_players, starters, bench, injury_ids):
+    """Detect important normal starters who are benched/omitted for any reason."""
+    if not starters or not core_players:
+        return {"available":False,"burden":None,"missing_core":[]}
+    starter_ids={x.get("id") for x in starters if x.get("id")}
+    bench_ids={x.get("id") for x in (bench or []) if x.get("id")}
+    injury_ids={x for x in (injury_ids or []) if x}
+    missing=[]
+    core=[x for x in core_players if float(x.get("importance",0))>=52][:14]
+    for x in core:
+        pid=x.get("player_id")
+        if not pid or pid in starter_ids or pid in injury_ids: continue
+        status="BENCH" if pid in bench_ids else "NOT IN MATCHDAY XI"
+        weight=.45 if status=="BENCH" else 1.0
+        missing.append({**x,"lineup_status":status,
+                        "weighted_impact":round(float(x.get("importance",0))*weight,1)})
+    burden=min(100.0,sum(float(x.get("weighted_impact",0)) for x in missing)/11.0)
+    return {"available":True,"burden":round(burden,1),"missing_core":missing}
+
+def _availability_team_summary(injuries, starter_rows, team_id, league_id, team_played, api_key, player_stats_supported=True):
+    starter_ids={x.get("id") for x in (starter_rows or []) if x.get("id")}; missing=[]; stale=[]; all_known=True
+    for rec in injuries or []:
+        pid=rec.get("player_id")
+        if pid and pid in starter_ids:
+            stale.append(rec.get("player")); continue
+        imp=api_football_player_importance(pid,team_id,league_id,team_played,api_key) if (pid and player_stats_supported) else {"available":False}
+        if imp.get("available"):
+            missing.append({**rec,**imp,"importance":round(float(imp.get("importance")),1)})
+        else:
+            all_known=False
+            missing.append({**rec,"importance":None,"importance_label":"UNKNOWN"})
+    missing=sorted(missing,key=lambda x:float(x.get("importance") or -1),reverse=True)
+    burden=min(100.0,sum(float(x.get("importance") or 0) for x in missing)/11.0) if all_known else None
+    return {"burden":round(burden,1) if burden is not None else None,
+            "key_absences":sum(float(x.get("importance") or 0)>=70 for x in missing),
+            "important_absences":sum(52<=float(x.get("importance") or 0)<70 for x in missing),
+            "missing":missing,"importance_complete":all_known,
+            "stale_reported_but_starting":[x for x in stale if x],"confirmed_lineup":bool(starter_rows)}
+
+def _selected_values(row, home_value, away_value):
+    p=str(row.get("Pick","")).upper()
+    return (home_value,away_value) if p=="HOME" else (away_value,home_value) if p=="AWAY" else (None,None)
+
+def _analyst_case(row):
+    """Analyst score ranks the complete case; it is deliberately not a probability."""
+    def num(v,default=None):
+        try:
+            x=float(v); return x if np.isfinite(x) else default
+        except Exception: return default
+    base=num(row.get("Ranking %"),num(row.get("Confidence %"),50.0))
+    score=float(base); supports=[]; risks=[]; adjustments=[]; evidence=1; possible=8
+    ctx=row.get("Context") if isinstance(row.get("Context"),dict) else {}; pick=str(row.get("Pick","")).upper()
+    def add(label,delta,reason,positive=None):
+        nonlocal score
+        score+=delta; adjustments.append({"factor":label,"delta":round(delta,1),"reason":reason})
+        if positive is True: supports.append(reason)
+        elif positive is False: risks.append(reason)
+
+    h=ctx.get("home") or {}; a=ctx.get("away") or {}
+    hp=num(h.get("ppg")); ap=num(a.get("ppg")); hv=num(h.get("venue_ppg"),hp); av=num(a.get("venue_ppg"),ap)
+    if None not in (hp,ap,hv,av):
+        evidence+=1; d=(.65*(hp-ap)+.35*(hv-av))*(1 if pick=="HOME" else -1)
+        if d>=.65: add("Recent/venue form",4,f"Recent and venue form strongly supports the pick ({d:+.2f} PPG edge).",True)
+        elif d>=.25: add("Recent/venue form",2,f"Recent and venue form supports the pick ({d:+.2f} PPG edge).",True)
+        elif d<=-.65: add("Recent/venue form",-5,f"Recent and venue form materially opposes the pick ({d:+.2f} PPG edge).",False)
+        elif d<=-.25: add("Recent/venue form",-2.5,f"Recent and venue form slightly opposes the pick ({d:+.2f} PPG edge).",False)
+
+    hpe=num(h.get("perf_vs_expect")); ape=num(a.get("perf_vs_expect"))
+    if hpe is not None and ape is not None:
+        evidence+=1; d=(hpe-ape)*(1 if pick=="HOME" else -1)
+        if d>=.10: add("Opponent-adjusted performance",2.5,"Selected team has been outperforming pre-match expectation against recent opposition.",True)
+        elif d<=-.10: add("Opponent-adjusted performance",-2.5,"Opponent-adjusted recent performance favours the other side.",False)
+
+    hx=ctx.get("true_xg_home"); ax=ctx.get("true_xg_away")
+    if isinstance(hx,dict) and hx.get("available") and isinstance(ax,dict) and ax.get("available"):
+        evidence+=1
+        hr=(num(hx.get("xg_for"),1.2)+num(ax.get("xg_against"),1.2))/2
+        ar=(num(ax.get("xg_for"),1.0)+num(hx.get("xg_against"),1.0))/2
+        d=(hr-ar)*(1 if pick=="HOME" else -1)
+        if d>=.40: add("Provider xG",3.5,f"Provider xG supports the pick ({d:+.2f} expected-goal-rate edge).",True)
+        elif d<=-.30: add("Provider xG",-4,f"Provider xG conflicts with the pick ({d:+.2f} expected-goal-rate edge).",False)
+    else:
+        gh=num(ctx.get("xg_like_home")); ga=num(ctx.get("xg_like_away"))
+        if gh is not None and ga is not None:
+            evidence+=1
+            d=(gh-ga)*(1 if pick=="HOME" else -1)
+            if d>=.45: add("Scoring profile",2,"Recent scoring/conceding profile supports the selection.",True)
+            elif d<=-.35: add("Scoring profile",-2.5,"Recent scoring/conceding profile conflicts with the selection.",False)
+
+    avx=ctx.get("availability") or {}; hav=avx.get("home") or {}; aav=avx.get("away") or {}
+    hb=num(hav.get("total_burden"),num(hav.get("burden"))); ab=num(aav.get("total_burden"),num(aav.get("burden")))
+    if hb is not None and ab is not None:
+        evidence+=1; sb,ob=_selected_values(row,hb,ab); adv=ob-sb
+        if adv>=12: add("Availability",7,f"Availability strongly favours the pick: opponent burden {ob:.1f} vs selected {sb:.1f}.",True)
+        elif adv>=6: add("Availability",4,f"Availability favours the pick: opponent burden {ob:.1f} vs selected {sb:.1f}.",True)
+        elif adv>=2.5: add("Availability",2,"Opponent carries the larger player-availability burden.",True)
+        elif adv<=-12: add("Availability",-8,f"Major availability disadvantage: selected burden {sb:.1f} vs opponent {ob:.1f}.",False)
+        elif adv<=-6: add("Availability",-5,f"Availability materially weakens the pick: selected burden {sb:.1f} vs opponent {ob:.1f}.",False)
+        elif adv<=-2.5: add("Availability",-2.5,"Selected side carries the larger player-availability burden.",False)
+        selected_av=hav if pick=="HOME" else aav
+        key=[x for x in (selected_av.get("missing") or []) if float(x.get("importance",0) or 0)>=70]
+        if key: risks.append("Key absence: "+", ".join(str(x.get("player","?")) for x in key[:3]))
+        rot=(selected_av.get("rotation") or {}).get("missing_core") or []
+        major_rot=[x for x in rot if float(x.get("importance",0) or 0)>=70]
+        if major_rot:
+            risks.append("Key normal starter not in confirmed XI: "+", ".join(f'{x.get("player","?")} ({x.get("lineup_status","")})' for x in major_rot[:3]))
+
+    sch=ctx.get("schedule") or {}; hs=sch.get("home") or {}; aas=sch.get("away") or {}
+    hr=num(hs.get("rest_days")); ar=num(aas.get("rest_days")); hg=num(hs.get("games14")); ag=num(aas.get("games14"))
+    if None not in (hr,ar,hg,ag):
+        evidence+=1; sr,orr=_selected_values(row,hr,ar); sg,og=_selected_values(row,hg,ag); total=0
+        if sr-orr>=2.5: total+=2
+        elif sr-orr<=-2.5: total-=2
+        if og-sg>=2: total+=2
+        elif og-sg<=-2: total-=2
+        if total>0: add("Schedule",total,"Rest/fixture congestion is more favourable for selected team.",True)
+        elif total<0: add("Schedule",total,"Rest/fixture congestion is more favourable for opponent.",False)
+        selected_s=hs if pick=="HOME" else aas
+        if num(selected_s.get("other_comp_games14"),0)>=2:
+            risks.append("Selected team has had multiple non-league/cup/European matches in the last 14 days.")
+
+    pp=ctx.get("provider_prediction") or {}
+    if pp.get("available"):
+        evidence+=1; psel=num(pp.get("home") if pick=="HOME" else pp.get("away"))
+        if psel is not None:
+            if psel>=62: add("Independent provider model",2.5,f"Independent provider forecast also supports selected side strongly ({psel:.0f}%).",True)
+            elif psel<=42: add("Independent provider model",-3.5,f"Independent provider forecast is materially cooler on selected side ({psel:.0f}%).",False)
+
+    market=num(row.get("Market fair %"))
+    if market is not None:
+        evidence+=1; gap=float(base)-market
+        if abs(gap)<=5: add("Market confirmation",1.5,"Model and de-margined bookmaker market are broadly aligned.",True)
+        elif gap>=12: add("Market disagreement",-3.5,f"Model is {gap:.1f}pp more confident than current market.",False)
+        elif gap<=-8: add("Market confirmation",2,"Current market is even more confident in selected side than model.",True)
+
+    draw=num(row.get("Draw %"),0)
+    if draw>=base: add("Adversarial draw check",-7,"Draw is modelled at least as likely as selected-team win.",False)
+    elif draw>=base-5: add("Adversarial draw check",-4,"Draw probability sits close to selected-team win probability.",False)
+    if base<55: add("Base probability",-3,"Underlying win probability is below 55%; not a naturally strong anchor.",False)
+    if str(row.get("Game state","")).upper()=="LIVE": add("Live state",-12,"Match already started; pre-match analyst logic is no longer clean.",False)
+
+    score=float(np.clip(score,0,100)); completeness=round(100*min(evidence,possible)/possible,0)
+    severe=sum(float(x.get("delta",0))<=-4 for x in adjustments)
+    verdict="ANCHOR" if score>=70 and severe==0 else "STRONG" if score>=63 and severe<=1 else "WATCH" if score>=56 else "CAUTION"
+    return {"score":round(score,1),"verdict":verdict,"supports":supports[:6],"risks":risks[:6],
+            "adjustments":adjustments,"evidence_completeness":completeness,"availability":avx}
+
+def _apply_analyst_engine(frame):
+    out=frame.copy(); cases=[_analyst_case(r) for r in out.to_dict("records")]
+    out["Analyst case"]=cases; out["Anchor score"]=[x["score"] for x in cases]
+    out["Analyst verdict"]=[x["verdict"] for x in cases]; out["Evidence completeness %"]=[x["evidence_completeness"] for x in cases]
+    out["Analyst risk count"]=[len(x["risks"]) for x in cases]
+    return out
+
+def _anchor_five(frame):
+    q=frame[frame["Pick"].isin(["HOME","AWAY"]) & frame["Game state"].eq("UPCOMING")].copy()
+    return q.sort_values(["Anchor score","Ranking %"],ascending=[False,False]).head(5) if not q.empty else q
+
+def build_analyst_target_acca(rows,target_odds=50.0,leg_counts=(5,6)):
+    counts=sorted({int(x) for x in leg_counts if int(x)>0}); candidates=[]
+    for row in rows:
+        try: price=float(row.get("Best market odds")); prob=float(row.get("Ranking %"))/100; anchor=float(row.get("Anchor score"))/100
+        except Exception: continue
+        diag=row.get("Market diagnostic") if isinstance(row.get("Market diagnostic"),dict) else {}
+        if (str(row.get("Pick","")).upper() in ("HOME","AWAY") and str(row.get("Game state","")).upper()=="UPCOMING"
+            and np.isfinite(price) and price>1.01 and 0<prob<1 and 0<anchor<=1 and diag.get("stage")=="accepted"):
+            candidates.append({"row":row,"price":price,"prob":prob,"anchor":anchor})
+    candidates=sorted(candidates,key=lambda x:(x["anchor"],x["prob"]),reverse=True)[:14]
+    valid=[n for n in counts if n<=len(candidates)]
+    if not valid:
+        need=min(counts) if counts else 5
+        return {"status":"INSUFFICIENT","legs":[],"reason":f"Only {len(candidates)} analyst-ranked selections have verified current prices; {need} required."}
+    target=max(float(target_odds),1.01); ready=below=None
+    for n in valid:
+        for combo in combinations(candidates,n):
+            odds=float(np.prod([x["price"] for x in combo])); joint=float(np.prod([x["prob"] for x in combo])); mean_anchor=float(np.mean([x["anchor"] for x in combo]))
+            quality=joint*(mean_anchor**2)
+            if odds>=target:
+                rank=(quality,joint,mean_anchor,-odds)
+                if ready is None or rank>ready[0]: ready=(rank,combo,odds,joint,mean_anchor)
+            else:
+                rank=(odds,quality,joint,mean_anchor)
+                if below is None or rank>below[0]: below=(rank,combo,odds,joint,mean_anchor)
+    chosen=ready or below
+    if chosen is None: return {"status":"INSUFFICIENT","legs":[],"reason":"No valid analyst combination could be formed."}
+    _,combo,odds,joint,mean_anchor=chosen
+    return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(odds,2),
+            "joint_probability":round(joint*100,2),"mean_anchor_score":round(mean_anchor*100,1),"target_odds":round(target,2)}
+
+@st.cache_resource(show_spinner=False)
+def _external_analysis_registry():
+    return {}
+
+def _deep_fixture_analysis(row, api_key, include_xg=False, include_lineup_core=False):
+    lname=str(row.get("League","")); lid=API_FOOTBALL_LEAGUES.get(lname)
+    ext=api_football_fixture_context(lname,row.get("Match date"),row.get("Home team"),row.get("Away team"),api_key)
+    if not ext.get("available"): return {"available":False,"reason":ext.get("reason","Provider fixture unavailable")}
+    ctx=row.get("Context") if isinstance(row.get("Context"),dict) else {}
+    hp=((ctx.get("home") or {}).get("played")) or 0; ap=((ctx.get("away") or {}).get("played")) or 0
+    lines=ext.get("confirmed_lineup") or {}; inj=ext.get("injuries") or {}; cov=ext.get("coverage") or {}
+    if cov.get("injuries"):
+        hav=_availability_team_summary(inj.get("home"),lines.get("home"),ext.get("home_team_id"),lid,hp,api_key,player_stats_supported=bool(cov.get("players")))
+        aav=_availability_team_summary(inj.get("away"),lines.get("away"),ext.get("away_team_id"),lid,ap,api_key,player_stats_supported=bool(cov.get("players")))
+        hav["coverage"]=True; aav["coverage"]=True
+    else:
+        hav={"burden":None,"missing":[],"coverage":False}
+        aav={"burden":None,"missing":[],"coverage":False}
+    pred=api_football_prediction(ext.get("fixture_id"),api_key) if cov.get("predictions") else {"available":False}
+    hs=api_football_team_schedule_context(ext.get("home_team_id"),row.get("Kickoff ISO") or row.get("Match date"),lid,api_key)
+    aas=api_football_team_schedule_context(ext.get("away_team_id"),row.get("Kickoff ISO") or row.get("Match date"),lid,api_key)
+    hx=ax={"available":False}
+    if include_xg and cov.get("fixture_statistics"):
+        hx=api_football_recent_xg(ext.get("home_team_id"),row.get("Kickoff ISO") or row.get("Match date"),api_key,3)
+        ax=api_football_recent_xg(ext.get("away_team_id"),row.get("Kickoff ISO") or row.get("Match date"),api_key,3)
+
+    if include_lineup_core and ext.get("lineups_confirmed") and cov.get("players"):
+        benches=ext.get("confirmed_bench") or {}
+        hcore=api_football_team_core_players(ext.get("home_team_id"),lid,hp,api_key)
+        acore=api_football_team_core_players(ext.get("away_team_id"),lid,ap,api_key)
+        hinj={x.get("player_id") for x in (inj.get("home") or [])}
+        ainj={x.get("player_id") for x in (inj.get("away") or [])}
+        hrot=_confirmed_lineup_rotation_summary(hcore,lines.get("home"),benches.get("home"),hinj)
+        arot=_confirmed_lineup_rotation_summary(acore,lines.get("away"),benches.get("away"),ainj)
+        hav["rotation"]=hrot; aav["rotation"]=arot
+        if hav.get("burden") is not None and hrot.get("burden") is not None:
+            hav["total_burden"]=round(float(hav["burden"])+float(hrot["burden"]),1)
+        if aav.get("burden") is not None and arot.get("burden") is not None:
+            aav["total_burden"]=round(float(aav["burden"])+float(arot["burden"]),1)
+
+    return {"available":True,"availability":{"home":hav,"away":aav},"confirmed_lineup":lines,
+            "confirmed_bench":ext.get("confirmed_bench"),
+            "lineups_confirmed":ext.get("lineups_confirmed",False),"coverage":cov,"provider_prediction":pred,
+            "schedule":{"home":hs,"away":aas},"true_xg_home":hx if hx.get("available") else None,
+            "true_xg_away":ax if ax.get("available") else None}
 
 ODDS_BASE="https://api.the-odds-api.com/v4/sports"
 
@@ -1960,17 +2385,18 @@ else:
 
 
 with st.expander("⚡ Engine & data connections",expanded=False):
-    st.caption("Normal use is fast: cached live models first. Deep model validation and premium xG/injury/line-up refresh are separate so they never block the first Top 10.")
+    st.caption("Normal use uses only the latest three seasons and cached live models. Full-history validation and premium xG/injury/line-up refresh are separate, so they never block the first Top 10.")
     _c1,_c2=st.columns(2)
     with _c1:
         st.markdown("**Deep engine validation**")
         st.caption("Runs the expensive TRAIN → TUNE → FINAL TEST process only when you choose. Successful results are cached for this session and then used by the live ranking.")
         if st.button("RUN / REFRESH DEEP VALIDATION",use_container_width=True,key="v24_run_deep"):
             st.session_state["v24_deep_requested"]=True
+        st.caption("Deep validation is intentionally separate from normal rankings; it can take time on a cold cache.")
     with _c2:
         st.markdown("**API-Football enrichment**")
         _af_now=_streamlit_api_football_secret()
-        st.caption("Used for true provider xG, injuries and line-ups. It is optional and never blocks the base ranking.")
+        st.caption("Used for the verified analyst pass: injuries/suspensions, player importance, confirmed line-ups, all-competition workload, provider forecast and provider xG when available. It never blocks the instant base ranking.")
         _af_entry=st.text_input(
             "API-Football key",
             value="",
@@ -1992,27 +2418,16 @@ with st.expander("⚡ Engine & data connections",expanded=False):
                 st.session_state.pop("api_football_key_override",None)
                 st.rerun()
         st.write("Status: "+("✅ Connected" if _af_now else "⚪ Not connected"))
-        if _af_now and st.button("REFRESH XG / INJURIES / LINE-UPS",use_container_width=True,key="v24_provider_refresh"):
+        if _af_now and st.button("RUN FULL VERIFIED ANALYST PASS",use_container_width=True,key="v24_provider_refresh"):
             st.session_state["v24_provider_refresh_requested"]=True
 
 st.markdown("### 🏁 Probability-first mode")
-st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. No positive-EV or +4pp edge gate. V24 loads a cached fast production model first; deep ensemble validation and premium xG/injury/line-up enrichment run only when you request them, so they no longer hold up the Top 10.")
-with st.expander("What changed in the V22 prediction engine?",expanded=False):
+st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. No positive-EV or +4pp edge gate. V25 uses a three-season fast model for ordinary rankings; the verified analyst pass and full-history validation run only when requested.")
+with st.expander("How V25 builds the five-team anchors",expanded=False):
     st.markdown("""
-**V23 does not simply add more filters.** It tries to improve the probability itself.
+V25 keeps model probability separate from analyst confidence. It then tries to disprove each favourite using recent/venue form, opponent-adjusted performance, scoring profile, schedule, market disagreement and draw risk. When API-Football is connected, the verified pass adds comparative injuries/suspensions, player importance, confirmed line-ups, all-competition workload, an independent provider forecast and provider xG where supplied.
 
-- Four independent models compete: gradient boosting, full logistic, Elo specialist and form/context specialist.
-- **Three-way chronological validation** separates training, tuning/calibration and a completely untouched final test.
-- Model weights are learned from the tune block rather than chosen by hand, then judged once on the final test.
-- Recent matches receive more weight, with the decay horizon selected per league before final testing.
-- Small samples are shrunk toward longer-run team priors rather than being trusted at face value.
-- Form accounts for opponent strength using performance-versus-expectation, plus home/away performance, recovery days and 14-day fixture congestion.
-- A temperature calibration step corrects systematic over/under-confidence.
-- The ensemble is used only when it beats the previous conservative engine on untouched final-test log loss; otherwise the app falls back automatically.
-- The app backtests the **actual product**: rank-by-rank Top 10 performance and Safest-Five matchdays.
-- Bookmaker consensus can become a predictive input, but its weight is **learned from settled results** and promoted only after beating model-only probabilities.
-- Optional API-Football enrichment can add **true provider xG**, verified injuries and confirmed line-ups. Missing provider data is never invented.
-- Current bookmaker prices remain required for target-return calculations but do not decide whether a future fixture appears in the Top 10.
+**Anchor score is not a win probability.** It is the transparent ranking score for the full analytical case. Five-Team Anchors are the five cases that survive that broader investigation best.
 """)
 # Compatibility values retained for older diagnostics only; they no longer gate the Top 10 or acca pool.
 min_conf=0
@@ -2125,9 +2540,22 @@ def _ensure_ledger():
 def _signal_id(r):
     return "|".join([str(r.get("League","")),str(r.get("Home team","")),str(r.get("Away team","")),str(r.get("Kickoff ISO","")),str(r.get("Pick",""))])
 
+def _is_ledger_trackable(r):
+    decision=str(r.get("Decision","")).upper()
+    try:
+        price=float(r.get("Best market odds"))
+    except Exception:
+        price=np.nan
+    state=str(r.get("Game state","")).upper()
+    diag=r.get("Market diagnostic") if isinstance(r.get("Market diagnostic"),dict) else {}
+    return (decision in ("RANKED","BET") and np.isfinite(price) and price>1.01
+            and state in ("UPCOMING","LIVE") and diag.get("stage")=="accepted")
+
 def _record_live_bets(df):
     _ensure_ledger(); led=st.session_state.v16_ledger.copy(); now=datetime.now(timezone.utc)
-    for _,r in df[df.Decision=="BET"].iterrows():
+    for _,r in df.iterrows():
+        if not _is_ledger_trackable(r):
+            continue
         sid=_signal_id(r); best=float(r["Best market odds"]); kickoff=pd.to_datetime(r.get("Kickoff ISO"),utc=True,errors="coerce")
         mins=(kickoff.to_pydatetime()-now).total_seconds()/60 if pd.notna(kickoff) else np.nan
         existing=led.index[led["Signal ID"]==sid].tolist()
@@ -2201,7 +2629,7 @@ def _learn_market_blender():
 def _apply_market_blender(df):
     blender,meta=_learn_market_blender()
     out=df.copy()
-    out["Probability source"]="V23 football model"
+    out["Probability source"]="V25 football model"
     if blender is None:
         return out,meta
     for i,r in out.iterrows():
@@ -2278,7 +2706,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V24 • FAST PRODUCTION ENGINE — richer football features, time-decay training, chronological model competition and probability calibration.")
+st.info("V25 • ANALYST ENGINE — richer football features, time-decay training, chronological model competition and probability calibration.")
 
 if True:
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -2290,8 +2718,11 @@ if True:
     skipped_completed=0
     skipped_stale=0
     engine_diagnostics=[]
-    with st.spinner("Loading verified fixtures and training league models..."):
-        for lname,meta in selected.items():
+    _load_status=st.empty()
+    _partial_status=st.empty()
+    with st.spinner("Loading fixtures and cached live models..."):
+        for _league_no,(lname,meta) in enumerate(selected.items(),1):
+            _load_status.info(f"Loading {lname} ({_league_no}/{len(selected)})…")
             code=meta["of"]
             odds_events=[]
             api_diag={}  # reset per league; never reuse diagnostics from a previous league
@@ -2451,6 +2882,10 @@ if True:
                             "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence,"Secondary checks":secondary_checks,"Context":context})
+            _partial_status.caption(f"Found {len(out)} ranked fixture candidate(s) so far.")
+    _load_status.empty()
+    _partial_status.empty()
+
     if st.session_state.get("v24_deep_requested",False):
         st.session_state["v24_deep_requested"]=False
 
@@ -2463,16 +2898,26 @@ if True:
         st.info("No unfinished supported fixtures are available in the selected window.")
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
+    _extreg=_external_analysis_registry()
+    for _i,_r in d.iterrows():
+        _deep=_extreg.get(_signal_id(_r))
+        if isinstance(_deep,dict) and _deep.get("available"):
+            _ctx=d.at[_i,"Context"] if isinstance(d.at[_i,"Context"],dict) else {}
+            for _k in ("availability","confirmed_lineup","confirmed_bench","lineups_confirmed","coverage","provider_prediction","schedule","true_xg_home","true_xg_away"):
+                _ctx[_k]=_deep.get(_k)
+            _ctx["injuries"]="VERIFIED PLAYER-IMPACT ANALYSIS"
+            d.at[_i,"Context"]=_ctx
+            d.at[_i,"External data status"]="Verified analyst pass (cached)"
     d["V18 audit"]=[score_selection(r) for r in d.to_dict("records")]
     d["Selection score"]=[audit["score"] for audit in d["V18 audit"]]
     d["Tier"]=[audit["tier"] for audit in d["V18 audit"]]
     d["Ranking %"]=pd.to_numeric(d["Confidence %"],errors="coerce")
 
     if engine_diagnostics:
-        with st.expander("🧪 V23 engine stress test — chronological unseen matches",expanded=False):
+        with st.expander("🧪 V25 engine stress test — chronological unseen matches",expanded=False):
             st.caption("Fast mode returns predictions immediately. When you run Deep Validation, the selected leagues use TRAIN → TUNE/CALIBRATE → untouched FINAL TEST and cache the approved result for the rest of the session.")
             _eng=pd.DataFrame(engine_diagnostics)
-            _cols=["League","Engine","Training matches","Train matches","Tune matches","Final test matches","Legacy log loss","V23 log loss","Accuracy %","Avg confidence %","Calibration gap pp","Recency half-life days","Time-decay half-life days","Temperature","Promoted"]
+            _cols=["League","Engine","Training matches","Train matches","Tune matches","Final test matches","Legacy log loss","V25 log loss","Accuracy %","Avg confidence %","Calibration gap pp","Recency half-life days","Time-decay half-life days","Temperature","Promoted"]
             st.dataframe(_eng[[c for c in _cols if c in _eng.columns]],hide_index=True,use_container_width=True)
             for meta in engine_diagnostics:
                 with st.expander(f'{meta["League"]} engine details',expanded=False):
@@ -2496,44 +2941,65 @@ if True:
     # our own results and use it only after it beats model-only probabilities on
     # a chronological holdout. No arbitrary 70/30 market weighting.
     d,market_blend_meta=_apply_market_blender(d)
+    d=_apply_analyst_engine(d)
 
-    # Premium external enrichment is intentionally limited to the strongest
-    # candidates to control API usage. It activates automatically when the secret
-    # exists and never fabricates a value when provider data is missing.
-    d["External data status"]="Not connected" if not api_football_key else "Connected — refresh on demand"
-    d["External context"]=[[] for _ in range(len(d))]
+    if "External data status" not in d.columns:
+        d["External data status"]="Not connected" if not api_football_key else "Connected — full analyst pass available"
     _provider_refresh=bool(api_football_key and st.session_state.get("v24_provider_refresh_requested",False))
     if _provider_refresh:
-        candidate_idx=d.sort_values("Ranking %",ascending=False).head(10).index.tolist()
-        for ridx in candidate_idx:
+        candidate_idx=d[d["Game state"].eq("UPCOMING")].sort_values(["Anchor score","Ranking %"],ascending=[False,False]).head(10).index.tolist()
+        xg_idx=set(candidate_idx[:5])
+        _progress=st.progress(0,text="Running verified analyst pass…")
+        for _n,ridx in enumerate(candidate_idx,1):
             r=d.loc[ridx]
             try:
-                ext=api_football_fixture_context(r["League"],r["Match date"],r["Home team"],r["Away team"],api_football_key)
-                if not ext.get("available"):
-                    d.at[ridx,"External data status"]=ext.get("reason","Unavailable")
-                    continue
-                hx=api_football_recent_xg(ext.get("home_team_id"),r.get("Kickoff ISO") or r["Match date"],api_football_key,5)
-                ax=api_football_recent_xg(ext.get("away_team_id"),r.get("Kickoff ISO") or r["Match date"],api_football_key,5)
-                base=float(d.at[ridx,"Ranking %"])/100.0
-                newp,details=_external_context_adjustment(
-                    base,hx,ax,str(r["Pick"]),
-                    ext.get("injuries"),ext.get("lineups_confirmed",False)
-                )
-                d.at[ridx,"Ranking %"]=round(newp*100,2)
-                d.at[ridx,"External data status"]="Verified provider context"
-                d.at[ridx,"External context"]=details
-                # Carry verified availability into the evidence panel.
-                ctx=d.at[ridx,"Context"] if isinstance(d.at[ridx,"Context"],dict) else {}
-                inj=ext.get("injuries") or {}
-                ctx["injuries"]=f"VERIFIED — home {len(inj.get('home',[]))}, away {len(inj.get('away',[]))}"
-                ctx["confirmed_lineups"]=ext.get("confirmed_lineup")
-                ctx["true_xg_home"]=hx if hx.get("available") else None
-                ctx["true_xg_away"]=ax if ax.get("available") else None
-                d.at[ridx,"Context"]=ctx
-                if details:
-                    d.at[ridx,"Probability source"]=str(d.at[ridx,"Probability source"])+" + provider context"
+                deep=_deep_fixture_analysis(r,api_football_key,include_xg=(ridx in xg_idx))
+                _external_analysis_registry()[_signal_id(r)]=deep
+                if deep.get("available"):
+                    ctx=d.at[ridx,"Context"] if isinstance(d.at[ridx,"Context"],dict) else {}
+                    for k in ("availability","confirmed_lineup","confirmed_bench","lineups_confirmed","coverage","provider_prediction","schedule","true_xg_home","true_xg_away"):
+                        ctx[k]=deep.get(k)
+                    ctx["injuries"]="VERIFIED PLAYER-IMPACT ANALYSIS"
+                    d.at[ridx,"Context"]=ctx
+                    d.at[ridx,"External data status"]="Verified analyst pass"
+                else:
+                    d.at[ridx,"External data status"]=deep.get("reason","Provider unavailable")
             except Exception as e:
                 d.at[ridx,"External data status"]=f"Provider error: {e}"
+            _progress.progress(_n/max(len(candidate_idx),1),text=f"Verified analyst pass {_n}/{len(candidate_idx)}")
+        _progress.empty()
+        d["V18 audit"]=[score_selection(r) for r in d.to_dict("records")]
+        d=_apply_analyst_engine(d)
+
+        # A verified injury/schedule pass can reorder the five. Make one small
+        # second pass so every FINAL anchor attempts provider xG too, not only
+        # the preliminary five chosen before availability was known.
+        _final_five_idx=_anchor_five(d).index.tolist()
+        for ridx in _final_five_idx:
+            try:
+                r=d.loc[ridx]
+                _ctx0=d.at[ridx,"Context"] if isinstance(d.at[ridx,"Context"],dict) else {}
+                _need_xg=not (
+                    isinstance(_ctx0.get("true_xg_home"),dict)
+                    and isinstance(_ctx0.get("true_xg_away"),dict)
+                )
+                # Always perform the final confirmed-XI/core-player check for the
+                # final five. xG is only re-requested when it was not already cached.
+                deep=_deep_fixture_analysis(r,api_football_key,include_xg=_need_xg,include_lineup_core=True)
+                _external_analysis_registry()[_signal_id(r)]=deep
+                if deep.get("available"):
+                    ctx=d.at[ridx,"Context"] if isinstance(d.at[ridx,"Context"],dict) else {}
+                    for k in ("availability","confirmed_lineup","confirmed_bench","lineups_confirmed","coverage","provider_prediction","schedule"):
+                        ctx[k]=deep.get(k)
+                    if deep.get("true_xg_home") is not None: ctx["true_xg_home"]=deep.get("true_xg_home")
+                    if deep.get("true_xg_away") is not None: ctx["true_xg_away"]=deep.get("true_xg_away")
+                    ctx["injuries"]="VERIFIED PLAYER-IMPACT ANALYSIS"
+                    d.at[ridx,"Context"]=ctx
+            except Exception:
+                pass
+        if _final_five_idx:
+            d["V18 audit"]=[score_selection(r) for r in d.to_dict("records")]
+            d=_apply_analyst_engine(d)
         st.session_state["v24_provider_refresh_requested"]=False
 
     if d["Game state"].eq("LIVE").any():
@@ -2543,8 +3009,8 @@ if True:
     _record_live_bets(d)
 
     # V17 CLEAN PICKS DASHBOARD — answer first, detail on demand.
-    bet_count=int((d.Decision=="BET").sum())
-    strong_mask=(d["Confidence %"] >= 68.0) & (d["Decision"] != "BET")
+    bet_count=int(d.apply(_is_ledger_trackable,axis=1).sum())
+    strong_mask=(d["Confidence %"] >= 68.0) & (~d.apply(_is_ledger_trackable,axis=1))
     strong_count=int(strong_mask.sum())
 
     def decimal_to_fractional(v, max_denominator=100):
@@ -2572,7 +3038,7 @@ if True:
         hh,aa=ctx.get("home",{}),ctx.get("away",{})
         hp,ap=hh.get("ppg"),aa.get("ppg"); hv,av=hh.get("venue_ppg"),aa.get("venue_ppg")
         if hp is None or ap is None: return "➖"
-        pred=str(r.get("Prediction","")).upper()
+        pred=str(r.get("Pick","")).upper()
         if pred=="HOME": support=(hp-ap)+.5*((hv or hp)-(av or ap))
         elif pred=="AWAY": support=(ap-hp)+.5*((av or ap)-(hv or hp))
         else: return "➖"
@@ -2618,13 +3084,33 @@ if True:
         component_labels={"model_probability":"Model probability","goals_profile":"Scoring profile*","recent_venue_form":"Recent + venue form","market_value":"Verified market value","availability_evidence":"Availability evidence","opponent_strength":"Opponent strength","supporting_indicators":"Supporting indicators"}
         component_rows=[{"Evidence component":component_labels[k],"Weight":f"{w}%","Component score":audit["components"][k]} for k,w in WEIGHTS.items()]
         st.dataframe(pd.DataFrame(component_rows),hide_index=True,use_container_width=True)
-        st.caption("*Evidence tier is advisory only in V22 and never blocks a team from the probability ranking. Scoring profile is a goals-rate proxy, not provider-supplied xG.")
+        st.caption("*Evidence tier is advisory and never blocks a team from the probability ranking. Scoring profile is a goals-rate proxy, not provider-supplied xG.")
         if audit.get("positives"): st.success("Supports pick: "+" • ".join(audit["positives"]))
         if audit.get("concerns"): st.warning("Concerns: "+" • ".join(audit["concerns"]))
         if audit.get("penalties"): st.caption("Risk penalties: "+" • ".join(f'-{p["points"]} {p["reason"]}' for p in audit["penalties"]))
         st.caption(r.get("Decision reason", ""))
+        case=r.get("Analyst case") if isinstance(r.get("Analyst case"),dict) else _analyst_case(r)
+        st.markdown("**V25 analyst case**")
+        x1,x2,x3=st.columns(3)
+        x1.metric("Anchor score",f'{case["score"]:.0f}/100'); x2.metric("Verdict",case["verdict"]); x3.metric("Evidence coverage",f'{case["evidence_completeness"]:.0f}%')
+        if case.get("supports"): st.success("Supports: "+" • ".join(case["supports"][:5]))
+        if case.get("risks"): st.warning("Adversarial check: "+" • ".join(case["risks"][:5]))
+        av=case.get("availability") or {}
+        if av:
+            _hav=av.get("home") or {}; _aav=av.get("away") or {}
+            st.write(f'Availability burden: {_short_team(r.get("Home team"))} **{_hav.get("burden","—")}** • {_short_team(r.get("Away team"))} **{_aav.get("burden","—")}**')
+            _miss=[]
+            for _side,_lab in [(_hav,"Home"),(_aav,"Away")]:
+                for _p in (_side.get("missing") or [])[:3]:
+                    _miss.append(f'{_lab}: {_p.get("player","?")} ({_p.get("importance_label","?")} {_p.get("importance","?")}/100)')
+            if _miss: st.caption("Important absences: "+" • ".join(_miss))
+            _rot=[]
+            for _side,_lab in [(_hav,"Home"),(_aav,"Away")]:
+                for _p in ((_side.get("rotation") or {}).get("missing_core") or [])[:3]:
+                    _rot.append(f'{_lab}: {_p.get("player","?")} {_p.get("lineup_status","")}')
+            if _rot: st.caption("Confirmed-XI changes: "+" • ".join(_rot))
 
-    # V24 FAST PRODUCTION DASHBOARD — one clear question: who is most likely to win?
+    # V25 ANALYST ENGINE DASHBOARD — one clear question: who is most likely to win?
     def _context_signal_v171(r):
         ctx=r.get("Context")
         if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
@@ -2674,12 +3160,12 @@ if True:
     def _build_goal_acca(frame,legs_choice,stake,target):
         target_odds=float(target)/float(stake) if float(stake)>0 else np.inf
         leg_counts=(5,6) if legs_choice=="Best of 5 or 6" else ((5,) if legs_choice=="5 teams" else (6,))
-        result=build_best_chance_acca(frame.to_dict("records"),target_odds=target_odds,leg_counts=leg_counts,min_books=int(min_books))
+        result=build_analyst_target_acca(frame.to_dict("records"),target_odds=target_odds,leg_counts=leg_counts)
         if result["status"]=="INSUFFICIENT":
             return None,{"reason":result["reason"]}
         part=pd.DataFrame(result["legs"]).copy()
         part["_goal_price"]=pd.to_numeric(part["Best market odds"],errors="coerce")
-        return {"legs":part,"total_odds":float(result["combined_odds"]),"joint_prob":float(result["joint_probability"])/100.0,"return":float(stake)*float(result["combined_odds"]),"target_odds":target_odds,"status":"TARGET REACHED" if result["status"]=="READY" else "TARGET NOT REACHABLE"},None
+        return {"legs":part,"total_odds":float(result["combined_odds"]),"joint_prob":float(result["joint_probability"])/100.0,"mean_anchor":float(result.get("mean_anchor_score",0)),"return":float(stake)*float(result["combined_odds"]),"target_odds":target_odds,"status":"TARGET REACHED" if result["status"]=="READY" else "TARGET NOT REACHABLE"},None
 
     # Ranking pool: all unfinished upcoming fixtures plus LIVE fixtures that still
     # have a current market. The acca optimiser itself will require verified prices.
@@ -2687,7 +3173,7 @@ if True:
 
     if build_acca_requested:
         st.markdown("### 🧠 Most-probable personalised acca")
-        st.caption("The optimiser starts from the full ranked fixture pool, but only legs with a verified current price can be used to calculate a target return. It does NOT require positive EV or a +4pp edge.")
+        st.caption("The optimiser starts from the V25 analyst-ranked pool. A verified current price is required only to calculate the return; positive EV and +4pp edge are not selection gates.")
         _acca,_acca_err=_build_goal_acca(_bettable_now,acca_legs_choice,float(acca_stake),float(acca_target))
         if _acca_err:
             st.warning(_acca_err["reason"])
@@ -2697,7 +3183,8 @@ if True:
             m1.metric("Stake",f"£{acca_stake:,.2f}")
             m2.metric("Target",f"£{acca_target:,.2f}")
             m3.metric("Combined odds",decimal_to_fractional(_acca["total_odds"]))
-            m4.metric("Model joint chance",f'{_acca["joint_prob"]*100:.1f}%')
+            m4.metric("Mean anchor score",f'{_acca.get("mean_anchor",0):.0f}/100')
+            st.caption(f'Model joint chance (independence approximation): {_acca["joint_prob"]*100:.1f}%')
             if _acca["status"]=="TARGET REACHED":
                 st.success(f'Highest-probability {actual_legs}-team combination found that reaches the target: estimated return £{_acca["return"]:,.2f}.')
             else:
@@ -2726,23 +3213,9 @@ if True:
     # Live rows use current market fair probability for ordering when available.
     _active=_bettable_now.copy()
     likely=_active[_active["Pick"].isin(["HOME","AWAY"])].sort_values("Ranking %",ascending=False).head(10)
-    strongest_five=likely.head(5).copy()
+    anchor_five=_anchor_five(d)
 
-    # Deep local context only for the displayed Top 10. This preserves detail
-    # while avoiding a full-season rescan for every fixture in the date range.
-    for _idx,_r in likely.iterrows():
-        try:
-            _ctx=fixture_context(
-                LEAGUES[_r["League"]]["of"],
-                pd.to_datetime(_r["Match date"]),
-                _r["Home team"],_r["Away team"]
-            )
-            d.at[_idx,"Context"]=_ctx
-            likely.at[_idx,"Context"]=_ctx
-            if _idx in strongest_five.index:
-                strongest_five.at[_idx,"Context"]=_ctx
-        except Exception:
-            pass
+    # Probability Top 10 and complete Five-Team Anchors answer different questions.
 
     def _render_clean_rows(frame,lens):
         if frame.empty:
@@ -2759,25 +3232,30 @@ if True:
             if str(r.get("Decision",""))=="PREDICTION ONLY":
                 main_badge='<span class="v171-badge">PREDICTION ONLY</span>'+main_badge
             draw_badge='<span class="v171-badge v171-hot">DRAW THREAT</span>' if _num(r,"Draw %",0) > _num(r,"Confidence %",0) else ''
-            main_badge=live_badge+draw_badge+f'<span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'+main_badge
+            _case=r.get("Analyst case") if isinstance(r.get("Analyst case"),dict) else _analyst_case(r)
+            main_badge=live_badge+draw_badge+f'<span class="v171-badge">Anchor {_case["score"]:.0f}/100</span>'+f'<span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'+main_badge
             reason=_clean_reason(r,lens)
             if is_live: reason="TIME-SENSITIVE: match already started. Check the live score and current price immediately. "+reason
             card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Pick"]))+' • '+html.escape(str(r.get("League","")))+'</div></div><div class="v171-prob">'+f'{display_prob:.0f}'+'%<small>'+html.escape(prob_label)+'</small></div></div><div class="v171-badges">'+main_badge+odds_badge+'<span class="v171-badge">Model '+html.escape(val)+'</span><span class="v171-badge">Market '+market+'</span><span class="v171-badge">Context '+ctx+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
             st.markdown(card,unsafe_allow_html=True)
             with st.expander("See full analysis",expanded=False): _detail_panel(r)
 
-    st.markdown('<div class="v171-lens">🛡️ Safest five at a glance</div>',unsafe_allow_html=True)
-    st.caption("These are ranks 1–5 from the calibrated probability table. No value/edge gate is imposed. Treat this as the safest five shortlist, then use the evidence panels to decide whether you want to swap a leg.")
-    if not strongest_five.empty:
-        _five=strongest_five[["Match date","League","Match","Pick","Ranking %","Best market odds","Game state","Timing label"]].copy()
-        _five["Selection"]=strongest_five.apply(_team_for_pick,axis=1)
-        _five["Current odds"]=_five["Best market odds"].apply(decimal_to_fractional)
-        _five["Status"]=np.where(_five["Game state"].eq("LIVE"),"🔴 "+_five["Timing label"].astype(str),"Upcoming")
-        _five=_five[["Match date","League","Selection","Ranking %","Current odds","Status"]]
-        _five=_five.rename(columns={"Ranking %":"Win probability %"})
-        st.dataframe(_five,hide_index=True,use_container_width=True)
+    st.markdown('<div class="v171-lens">🧠 Five-Team Anchors</div>',unsafe_allow_html=True)
+    st.caption("The closest app equivalent to the full pre-bet conversation: probability first, then form, opponent quality, scoring profile, availability, schedule, market cross-check and an adversarial attempt to find the reason the pick could fail.")
+    if not anchor_five.empty:
+        _afive=anchor_five[["Match date","League","Match","Pick","Ranking %","Anchor score","Analyst verdict","Evidence completeness %","Best market odds","External data status"]].copy()
+        _afive["Selection"]=anchor_five.apply(_team_for_pick,axis=1); _afive["Current odds"]=_afive["Best market odds"].apply(decimal_to_fractional)
+        _afive=_afive[["Match date","League","Selection","Ranking %","Anchor score","Analyst verdict","Evidence completeness %","Current odds","External data status"]]
+        _afive=_afive.rename(columns={"Ranking %":"Model win %","Evidence completeness %":"Evidence %"})
+        st.dataframe(_afive,hide_index=True,use_container_width=True)
+        for _pos,(_, _r) in enumerate(anchor_five.iterrows(),1):
+            _case=_r.get("Analyst case") if isinstance(_r.get("Analyst case"),dict) else _analyst_case(_r); _team=_team_for_pick(_r)
+            st.markdown(f"**{_pos}. {_team} — Anchor {_case['score']:.0f}/100 · Model {_r['Ranking %']:.0f}%**")
+            st.caption("Why it made the five: "+(" • ".join(_case.get("supports",[])[:2]) or "Strong overall analytical ranking."))
+            st.caption("What could beat it: "+(" • ".join(_case.get("risks",[])[:2]) or "No major contradiction found in the available evidence."))
+            with st.expander(f"Full anchor analysis — {_team}",expanded=False): _detail_panel(_r)
     else:
-        st.info("No unfinished outright-win candidates are available in this window.")
+        st.info("No upcoming outright-win candidates are available in this window.")
 
     st.markdown('<div class="v171-lens">🏆 Full Top 10 ranking</div>',unsafe_allow_html=True)
     st.caption("Ranked strongest to weakest across every unfinished fixture in the selected dates. Upcoming matches use the model whether or not odds are already verified; LIVE matches are included only while a current market remains available.")
@@ -2795,10 +3273,10 @@ if True:
 with st.expander("🔌 Advanced data providers",expanded=False):
     _af=_streamlit_api_football_secret()
     st.write("**API-Football enrichment:** "+("✅ Connected" if _af else "⚪ Not connected"))
-    st.caption("API-Football is now on-demand. Connect API_FOOTBALL_KEY once, then use REFRESH XG / INJURIES / LINE-UPS when you want the premium pass. It never blocks the initial Top 10 and never invents missing data.")
+    st.caption("API-Football is on-demand. RUN FULL VERIFIED ANALYST PASS adds match-specific injuries/suspensions, player-importance estimates, confirmed line-ups, all-competition workload, an independent provider forecast and provider xG where supplied. Missing data is never invented.")
     st.write("**The Odds API:** "+("✅ Connected" if (_streamlit_odds_secret() or st.session_state.get("odds_key_override")) else "⚪ Not connected"))
-    st.caption("Current prices feed return calculations immediately. Predictive market blending is never assigned a hand-picked weight: V23 learns it from settled ledger history and activates it only after chronological holdout improvement.")
+    st.caption("Current prices feed return calculations immediately. Predictive market blending is never assigned a hand-picked weight: V25 learns it from settled ledger history and activates it only after chronological holdout improvement.")
 
 st.divider()
-st.caption("V24 Fast Production: fast cached rankings first; expensive validation and premium enrichment are on-demand and cached. Full-fixture ranking remains intact. Finished/stale fixtures stay hidden. No model can guarantee outcomes.")
+st.caption("V25 Analyst Engine: instant probability ranking first, then transparent analyst scoring and Five-Team Anchors. The verified provider pass is optional/on-demand and cached. Finished/stale fixtures stay hidden; no model can guarantee a result.")
 

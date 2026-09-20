@@ -1,74 +1,85 @@
-# Craig's Football Predictor V24 — Fast Production
+# Craig's Football Predictor V25 — Analyst Engine
 
-V24 fixes the V23 performance bottleneck without throwing away the deeper
-validation and premium-data capability.
+V25 is built around the reasoning process used to construct a five-team football
+acca instead of treating a single machine-learning probability as the whole answer.
 
-## Normal app use — fast path
+## Outputs
 
-On an ordinary Today / Saturday / Next 7 Days run, V24:
+**Top 10 strongest teams** stays probability-first across every unfinished fixture
+in the selected date range.
 
-1. fetches current fixtures and odds
-2. loads/fits one cached recency-weighted live model per active league
-3. ranks every unfinished fixture
-4. shows the Top 10 and Safest Five
-5. calculates the target acca only where current prices exist
+**Five-Team Anchors** is the second-stage analytical shortlist. It challenges the
+probability with:
+- recent and home/away form
+- opponent-adjusted performance
+- scoring/conceding profile
+- provider xG when genuinely available
+- injuries and suspensions
+- importance of the missing player
+- confirmed starting XI / bench
+- important normal starters omitted or rotated
+- all-competition rest and congestion
+- API-Football's independent forecast
+- bookmaker market agreement/disagreement
+- draw threat
+- an explicit adversarial "what could make this lose?" check
 
-It does **not** run the expensive multi-model TRAIN/TUNE/FINAL TEST process on
-every normal screen refresh.
+`Anchor score` is not presented as a win probability. The model's calibrated win
+probability remains visible separately.
 
-## Deep validation — on demand
+## Availability logic
 
-Open **Engine & data connections** and press:
+V25 does not count injuries equally.
 
-`RUN / REFRESH DEEP VALIDATION`
+For unavailable players with usable provider statistics, current-season importance
+is estimated from minutes share, starts, rating, and position-adjusted goal/assist
+contribution. Players are labelled KEY / IMPORTANT / ROTATION / DEPTH.
 
-This runs the full production audit for the active leagues:
-- four candidate models
-- 70/15/15 chronological TRAIN / TUNE / untouched FINAL TEST
-- recency half-life selection
-- learned ensemble weights
-- probability calibration
-- legacy-model comparison
-- Top-10 rank historical audit
-- Safest-Five historical audit
+The two teams' burdens are compared. This allows several important absences for
+one team to outweigh one key absence for the other team.
 
-Successful results are cached in the current Streamlit process/session and then
-replace the fast model for subsequent rankings.
+If confirmed lineups are available:
+- a player reported injured but actually starting is removed from the injury burden
+- V25 builds a current core-player list
+- important normal starters who are benched or omitted are identified even when
+  the reason is rotation rather than injury
+- bench omissions receive a smaller analyst penalty than a complete matchday-XI omission
 
-## API-Football — second data service
+If API-Football reports that player-stat coverage is not available, V25 fails
+closed rather than inventing a player-importance score.
 
-The second service is **API-Football**. It supplies the richer context that the
-basic fixture/odds feeds cannot reliably provide:
+## Verified analyst pass
 
-- provider expected goals (when exposed in fixture statistics)
-- verified injuries
-- confirmed line-ups
-- fixture/team identity
+Use **RUN FULL VERIFIED ANALYST PASS** to enrich the ten strongest current cases.
+The final five then receive a second pass so injury-driven reordering cannot leave
+a newly promoted anchor without the confirmed-XI/core-player check. Provider xG
+is also attempted for final anchors when the competition actually exposes it.
 
-It is deliberately **on-demand** in V24. Connect it in either of two ways:
+Provider results are cached in the running Streamlit process.
 
-### Permanent
-Add to Streamlit Community Cloud → App → Settings → Secrets:
+## Speed
+
+Normal rankings still use the fast three-season model. Full historical
+TRAIN -> TUNE -> untouched FINAL TEST validation remains separate and on-demand.
+
+## Secrets
 
 ```toml
-ODDS_API_KEY = "your Odds API key"
-API_FOOTBALL_KEY = "your API-Football key"
+ODDS_API_KEY = "..."
+API_FOOTBALL_KEY = "..."
 ```
 
-### Temporary session
-Open **Engine & data connections** inside the app, paste the API-Football key and
-press **CONNECT API-FOOTBALL**.
+## Stress testing
 
-Then press **REFRESH XG / INJURIES / LINE-UPS** whenever you want the premium
-context pass. It never blocks the initial Top 10.
+The included `V25_STRESS_TEST_REPORT.md` documents the final automated tests.
+The final build passed 33/33 structural and synthetic decision checks plus Python
+compilation.
 
-## Existing product rules preserved
+Known deliberate limitations:
+- player importance is a transparent current-season heuristic, not a learned
+  historical player plus/minus coefficient
+- process-level caches reset on a full Streamlit container restart
+- accumulator joint probability is an independence approximation
+- API-Football coverage, lineups and xG vary by league and fixture
 
-- no positive-EV ranking gate
-- no +4pp edge ranking gate
-- future fixtures can rank before current odds are published
-- finished/stale matches remain hidden
-- current prices are required only for live inclusion and target-return maths
-- bookmaker/model blending is learned from settled history, never given an arbitrary weight
-
-No probability model guarantees a football result.
+No football model can guarantee an outcome.
