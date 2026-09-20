@@ -14,9 +14,9 @@ from sklearn.metrics import log_loss
 
 
 
-# --- V18 DECISION / SAFETY ENGINE (embedded in V19.4) ---------------------------
+# --- V18 DECISION / SAFETY ENGINE (embedded in V19.5) ---------------------------
 # Kept inside app.py so Streamlit cannot deploy the UI and selection engine from
-# different commits. This is the V18 scoring/acca logic preserved in V19.4.
+# different commits. This is the V18 scoring/acca logic preserved in V19.5.
 WEIGHTS = {
     "model_probability": 30,
     "goals_profile": 20,
@@ -181,7 +181,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest estimated joint success probability among combinations reaching the target." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V19.4", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V19.5", page_icon="📈", layout="wide")
 
 
 
@@ -305,7 +305,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V19.4</span>
+ <span class="v14-chip">V19.5</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -342,7 +342,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V19.4</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V19.5</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -1124,7 +1124,7 @@ with st.expander("View league engine policy",expanded=False):
 
 st.subheader("🔐 Live data connection")
 
-# V19.4: load the Odds API key automatically from Streamlit Secrets.
+# V19.5: load the Odds API key automatically from Streamlit Secrets.
 # The secret stays outside GitHub/source code. A temporary session override is
 # still available for diagnostics, but normal use requires no re-entry.
 def _streamlit_odds_secret():
@@ -1192,25 +1192,75 @@ with pc1:
 with pc2:
     max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
     topn=st.number_input("Show top predictions",min_value=3,max_value=30,value=10,step=1)
-    date_mode=st.selectbox("Fixture window",["Today","This Saturday","Custom range"],index=0)
 
+# V19.5 fixture picker: date changes stay local until GO is pressed.
+# This prevents the expensive football analysis from rerunning while the user
+# is still tapping around the calendar on a phone/tablet.
 _today=date.today()
-if date_mode=="Today":
-    start_day=end_day=_today
-elif date_mode=="This Saturday":
-    _days_ahead=(5-_today.weekday())%7
-    _sat=_today+timedelta(days=_days_ahead)
-    start_day=end_day=_sat
-else:
-    _range=st.date_input("Custom date range",value=(_today,_today+timedelta(days=7)))
-    if isinstance(_range,(tuple,list)) and len(_range)==2:
-        start_day,end_day=_range
-    else:
-        start_day=end_day=_range if not isinstance(_range,(tuple,list)) else _range[0]
-    if end_day<start_day:
-        start_day,end_day=end_day,start_day
+_days_ahead=(5-_today.weekday())%7
+_this_saturday=_today+timedelta(days=_days_ahead)
 
-st.caption(f"Analysing fixtures from {start_day.strftime('%a %d %b')} to {end_day.strftime('%a %d %b %Y')}.")
+if "fixture_start_day" not in st.session_state:
+    st.session_state["fixture_start_day"]=_today
+if "fixture_end_day" not in st.session_state:
+    st.session_state["fixture_end_day"]=_today
+if "fixture_range_picker" not in st.session_state:
+    st.session_state["fixture_range_picker"]=(
+        st.session_state["fixture_start_day"],
+        st.session_state["fixture_end_day"],
+    )
+
+st.markdown("### 📅 Fixtures to analyse")
+st.caption("Quick-pick a common window, or choose your own range. The app only refreshes the football analysis when you press a GO button.")
+_q1,_q2,_q3=st.columns(3)
+with _q1:
+    if st.button("TODAY — GO",use_container_width=True,key="fixtures_today_go"):
+        st.session_state["fixture_start_day"]=_today
+        st.session_state["fixture_end_day"]=_today
+        st.session_state["fixture_range_picker"]=(_today,_today)
+        st.rerun()
+with _q2:
+    if st.button("SATURDAY — GO",use_container_width=True,key="fixtures_saturday_go"):
+        st.session_state["fixture_start_day"]=_this_saturday
+        st.session_state["fixture_end_day"]=_this_saturday
+        st.session_state["fixture_range_picker"]=(_this_saturday,_this_saturday)
+        st.rerun()
+with _q3:
+    if st.button("NEXT 7 DAYS — GO",use_container_width=True,key="fixtures_week_go"):
+        _week_end=_today+timedelta(days=6)
+        st.session_state["fixture_start_day"]=_today
+        st.session_state["fixture_end_day"]=_week_end
+        st.session_state["fixture_range_picker"]=(_today,_week_end)
+        st.rerun()
+
+with st.form("fixture_range_form",clear_on_submit=False):
+    _range=st.date_input(
+        "Custom date range",
+        key="fixture_range_picker",
+        min_value=_today,
+        max_value=_today+timedelta(days=30),
+        help="Choose the first and last date, then press GO. Nothing recalculates while you are choosing dates.",
+    )
+    _apply_dates=st.form_submit_button("GO — ANALYSE THIS DATE RANGE",use_container_width=True,type="primary")
+
+if _apply_dates:
+    if isinstance(_range,(tuple,list)) and len(_range)>=2:
+        _new_start,_new_end=_range[0],_range[1]
+    elif isinstance(_range,(tuple,list)) and len(_range)==1:
+        _new_start=_new_end=_range[0]
+    else:
+        _new_start=_new_end=_range
+    if _new_end < _new_start:
+        _new_start,_new_end=_new_end,_new_start
+    st.session_state["fixture_start_day"]=_new_start
+    st.session_state["fixture_end_day"]=_new_end
+
+start_day=st.session_state["fixture_start_day"]
+end_day=st.session_state["fixture_end_day"]
+if start_day==end_day:
+    st.success(f"Active fixtures: {start_day.strftime('%A %d %B %Y')}")
+else:
+    st.success(f"Active fixtures: {start_day.strftime('%a %d %b')} → {end_day.strftime('%a %d %b %Y')}")
 
 st.markdown("### 🎯 Personalise acca")
 st.caption("Optional — the Top 10 still loads automatically. Enter a stake and target only when you want a tailored 5/6-team acca.")
@@ -1331,7 +1381,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V19.4 • CONSOLIDATED BUILD — V18 evidence engine + visible personalised acca + automatic secret-based odds connection.")
+st.info("V19.5 • CONSOLIDATED BUILD — V18 evidence engine + visible personalised acca + automatic secret-based odds connection.")
 
 if True:
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1705,5 +1755,5 @@ if True:
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not odds_key: st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V19.4 rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V19.5 rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
