@@ -222,3 +222,110 @@ def build_acca(rows, target_odds=50.0, min_legs=4, max_legs=7):
     _, combo, combined = best
     return {"status": "READY", "legs": [item[0] for item in combo],
             "combined_odds": round(combined, 2), "reason": "Closest eligible combination to the target price."}
+
+
+def build_best_chance_acca(rows, target_odds=50.0, leg_counts=(5, 6), min_books=3):
+    """Find the highest-model-probability acca that can reach the target.
+
+    This planner is deliberately different from ``build_acca``. It does not
+    require an ELITE/value-bet label because a short-priced, high-probability
+    winner can be useful in an acca even when its price is not positive EV.
+    It still requires a uniquely matched fixture, current price, bookmaker
+    agreement and minimum market depth. The joint probability is an
+    independence estimate, not a guarantee.
+    """
+    counts = sorted({int(x) for x in leg_counts if int(x) > 0})
+    candidates = []
+    for row in rows:
+        audit = row.get("V18 audit") or score_selection(row)
+        pick = str(row.get("Pick", "")).upper()
+        price = _number(row.get("Best market odds"))
+        probability = _number(row.get("Confidence %"))
+        books = _number(row.get("Bookmakers"), 0)
+        diagnostic = row.get("Market diagnostic") or {}
+        accepted_match = isinstance(diagnostic, dict) and diagnostic.get("stage") == "accepted"
+        if (
+            pick in ("HOME", "AWAY")
+            and price is not None and price > 1.01
+            and probability is not None and 0 < probability < 100
+            and str(row.get("Market integrity", "")) == "OK"
+            and books >= min_books
+            and bool(row.get("Kickoff ISO"))
+            and accepted_match
+        ):
+            candidates.append({
+                "row": row,
+                "audit": audit,
+                "price": price,
+                "probability": probability / 100.0,
+            })
+
+    # Keep exhaustive search responsive across a multi-day range while
+    # retaining both the strongest favourites and useful target-price legs.
+    by_probability = sorted(candidates, key=lambda x: x["probability"], reverse=True)[:20]
+    by_efficiency = sorted(
+        candidates,
+        key=lambda x: x["probability"] * (x["price"] ** 0.5),
+        reverse=True,
+    )[:12]
+    pool = []
+    seen = set()
+    for item in by_probability + by_efficiency:
+        identity = (item["row"].get("League"), item["row"].get("Match"))
+        if identity not in seen:
+            seen.add(identity)
+            pool.append(item)
+
+    valid_counts = [count for count in counts if count <= len(pool)]
+    if not valid_counts:
+        needed = min(counts) if counts else 5
+        return {
+            "status": "INSUFFICIENT", "legs": [], "combined_odds": None,
+            "joint_probability": None,
+            "reason": f"Only {len(pool)} selections have fully matched current prices; {needed} required.",
+        }
+
+    target = max(float(target_odds), 1.01)
+    best_ready = None
+    best_below = None
+    for count in valid_counts:
+        for combo in combinations(pool, count):
+            combined = 1.0
+            joint = 1.0
+            scores = []
+            for item in combo:
+                combined *= item["price"]
+                joint *= item["probability"]
+                scores.append(_number(item["audit"].get("score"), 0))
+            mean_score = sum(scores) / len(scores)
+            if combined >= target:
+                # Maximise estimated success chance; audit quality and avoiding
+                # unnecessary excess odds are tie-breakers only.
+                rank = (joint, mean_score, -combined)
+                if best_ready is None or rank > best_ready[0]:
+                    best_ready = (rank, combo, combined, joint)
+            else:
+                # If the target cannot be reached, show the closest achievable
+                # return, then prefer the safer combination at that level.
+                rank = (combined, joint, mean_score)
+                if best_below is None or rank > best_below[0]:
+                    best_below = (rank, combo, combined, joint)
+
+    chosen = best_ready or best_below
+    if chosen is None:
+        return {"status": "INSUFFICIENT", "legs": [], "combined_odds": None,
+                "joint_probability": None, "reason": "No valid combination could be formed."}
+    _, combo, combined, joint = chosen
+    ready = best_ready is not None
+    return {
+        "status": "READY" if ready else "BELOW_TARGET",
+        "legs": [item["row"] for item in combo],
+        "combined_odds": round(combined, 2),
+        "joint_probability": round(joint * 100, 2),
+        "target_odds": round(target, 2),
+        "reason": (
+            "Highest estimated joint success probability among combinations reaching the target."
+            if ready else
+            "No five/six-team combination reaches the target with the verified prices; this is the closest available return."
+        ),
+    }

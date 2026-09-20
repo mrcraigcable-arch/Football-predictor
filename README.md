@@ -18,6 +18,14 @@ moves API controls, thresholds and model laboratories into a collapsed Settings
 sidebar. The redundant comparison lists and decorative bottom navigation have
 been removed so the same selection is not repeated in several places.
 
+The default shortlist is always the ten highest model win probabilities for the
+chosen fixture dates. Date controls support Today, This Saturday and a custom
+range. A separate personalised acca planner accepts a stake, target return and
+five/six-team preference, then selects the verified combination with the highest
+estimated joint success probability that reaches the requested odds. If the
+target is impossible for the available fixtures, it reports the closest honest
+alternative rather than weakening data-verification rules or claiming certainty.
+
 The V18 safety engine remains underneath the new interface. It grades every
 outright pick as ELITE, STRONG, WATCHLIST or REJECT from
 model probability, scoring profile, venue-adjusted form, verified bookmaker

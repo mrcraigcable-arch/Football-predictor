@@ -5,11 +5,11 @@ import requests
 import html
 from collections import defaultdict, deque
 from fractions import Fraction
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
-from v18_selection import WEIGHTS, build_acca, score_selection
+from v18_selection import WEIGHTS, build_best_chance_acca, score_selection
 
 st.set_page_config(page_title="Craig's Football Predictor V19", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 
@@ -258,7 +258,23 @@ if _secret_odds_key and not st.session_state.get("odds_key"):
 st.sidebar.header("⚙️ Settings")
 st.sidebar.caption("Safe defaults are applied automatically. Changes refresh the analysis.")
 scope=st.sidebar.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
-day=st.sidebar.date_input("Match date",date.today())
+today=date.today()
+date_mode=st.sidebar.selectbox("Fixture dates",["Today","This Saturday","Custom range"])
+if date_mode=="Today":
+    start_day=end_day=today
+elif date_mode=="This Saturday":
+    start_day=end_day=today+timedelta(days=(5-today.weekday())%7)
+else:
+    picked_days=st.sidebar.date_input(
+        "Custom date range",value=(today,today+timedelta(days=6)),
+        min_value=today,max_value=today+timedelta(days=30),
+    )
+    if isinstance(picked_days,(tuple,list)) and len(picked_days)==2:
+        start_day,end_day=picked_days
+    elif isinstance(picked_days,(tuple,list)) and len(picked_days)==1:
+        start_day=end_day=picked_days[0]
+    else:
+        start_day=end_day=picked_days
 entered=st.sidebar.text_input("The Odds API key",value=st.session_state.get("odds_key",""),
                       type="password",placeholder="Paste free The Odds API key",
                       help="Held in this Streamlit session; it is not written to your GitHub repository.")
@@ -279,9 +295,13 @@ with st.sidebar.expander("Decision rules",expanded=False):
     min_edge=st.number_input("Minimum market edge (pp)",min_value=0,max_value=20,value=4,step=1)
     min_books=st.number_input("Minimum bookmakers",min_value=3,max_value=25,value=8,step=1)
     max_edge=st.number_input("Auto-audit above edge (pp)",min_value=8,max_value=30,value=15,step=1)
-    topn=st.number_input("Show top predictions",min_value=3,max_value=20,value=10,step=1)
+    topn=10
+
+with st.sidebar.expander("Personalise acca",expanded=False):
+    st.caption("Set the stake, target and number of teams. The planner maximises estimated success probability for that goal.")
     acca_stake=st.number_input("Acca stake (£)",min_value=1.0,max_value=1000.0,value=10.0,step=1.0)
     acca_target_return=st.number_input("Target total return (£)",min_value=10.0,max_value=100000.0,value=500.0,step=10.0)
+    acca_size=st.selectbox("Number of teams",["Best of 5 or 6","5 teams","6 teams"])
 
 st.sidebar.caption("Advanced model checks are below; they are not needed for daily use.")
 
@@ -1137,7 +1157,14 @@ if True:  # V19 automatically analyses the current selections; no action button 
             except Exception as e:
                 warnings.append(f"{lname}: fixture feed unavailable ({e})")
                 continue
-            games=[m for m in matches if str(m.get("date",""))[:10]==day.isoformat()]
+            games=[]
+            for match in matches:
+                try:
+                    match_day=date.fromisoformat(str(match.get("date",""))[:10])
+                except ValueError:
+                    continue
+                if start_day <= match_day <= end_day:
+                    games.append(match)
             if not games: continue
             try:
                 model,hist,elo,ntrain,engine_label,validation_status,validation_evidence=train(lname,code)
@@ -1146,6 +1173,7 @@ if True:  # V19 automatically analyses the current selections; no action button 
                 continue
             def av(t,k): return float(np.mean([x[k] for x in hist[t]])) if hist[t] else 0.
             for g in games:
+                fixture_day=date.fromisoformat(str(g.get("date",""))[:10])
                 h=team_name(g.get("team1","")).strip(); a=team_name(g.get("team2","")).strip()
                 if not h or not a: continue
                 vals={"h_pts":av(h,"pts"),"a_pts":av(a,"pts"),
@@ -1155,7 +1183,7 @@ if True:  # V19 automatically analyses the current selections; no action button 
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
                 i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
-                market,matchdiag=consensus_for(odds_events,h,a,day) if odds_events else (None,{"stage":"no-events","reason":"Odds endpoint returned zero current/live events for this league","trace":[],"rejected_books":[],"api": api_diag})
+                market,matchdiag=consensus_for(odds_events,h,a,fixture_day) if odds_events else (None,{"stage":"no-events","reason":"Odds endpoint returned zero current/live events for this league","trace":[],"rejected_books":[],"api": api_diag})
                 if isinstance(matchdiag,dict) and odds_key:
                     matchdiag.setdefault("api", api_diag)
                 if odds_key:
@@ -1176,7 +1204,7 @@ if True:  # V19 automatically analyses the current selections; no action button 
                 kickoff_iso=(market.get("event",{}).get("commence_time") if market else None) or matched_kickoff_from_diag(matchdiag)
                 kickoff_dt,kickoff_label=kickoff_uk_from_iso(kickoff_iso)
                 if not kickoff_label:
-                    kickoff_label=f"{day.strftime('%a %d %b')} • time unavailable"
+                    kickoff_label=f"{fixture_day.strftime('%a %d %b')} • time unavailable"
                 odd=np.nan; best_odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
                 if market:
                     med,mfair,books=market["median"],market["fair"],market["books"]
@@ -1184,7 +1212,7 @@ if True:  # V19 automatically analyses the current selections; no action button 
                     odd=float(med[i]); best_odd=float(market["best"][i]); mprob=float(mfair[i])
                     edge=conf-mprob
                     ev=conf*best_odd-1
-                context = fixture_context(code, day, h, a)
+                context = fixture_context(code, fixture_day, h, a)
                 secondary_checks=[]
                 # V16.5 decision hierarchy: establish whether this is a positive betting candidate,
                 # then automatically investigate unusually large edges instead of handing work to the user. VERIFY is reserved for otherwise-qualifying
@@ -1241,7 +1269,7 @@ if True:  # V19 automatically analyses the current selections; no action button 
         with st.expander("Data/model warnings"):
             for w in warnings: st.warning(w)
     if not out:
-        st.info("No supported OpenFootball fixtures were found for that date.")
+        st.info("No supported OpenFootball fixtures were found for the selected date range.")
         st.stop()
     d=pd.DataFrame(out)
     d["V18 audit"]=[score_selection(r) for r in d.to_dict("records")]
@@ -1383,7 +1411,7 @@ if True:  # V19 automatically analyses the current selections; no action button 
     .v171-badges{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0 8px}.v171-badge{border:1px solid #28465d;border-radius:999px;padding:4px 8px;font-size:.72rem;font-weight:850;color:#cbd9e5}.v171-good{border-color:#1f7d55;color:#65efaa}.v171-hot{border-color:#8b6d18;color:#ffd66d}.v171-reason{font-size:.86rem;color:#c5d3df;line-height:1.4}.v171-empty{border:1px dashed #28465d;border-radius:16px;padding:14px;color:#91a8bc;margin-bottom:8px}
     @media(max-width:520px){.v171-card{padding:13px 14px}.v171-team{font-size:1.12rem}.v171-prob{font-size:1.42rem}}
     </style>
-    <div class="v171-head"><h2>Today's best picks</h2><p>Ranked automatically by probability, form, scoring profile and verified value.</p></div>
+    <div class="v171-head"><h2>Top 10 most likely winners</h2><p>Ranked first by the model's win probability; evidence and current price remain visible underneath.</p></div>
     """,unsafe_allow_html=True)
 
     tier_order=["ELITE","STRONG","WATCHLIST","REJECT"]
@@ -1391,34 +1419,39 @@ if True:  # V19 automatically analyses the current selections; no action button 
     tc=st.columns(4)
     for col,tier in zip(tc,tier_order): col.metric(tier.title(),int(tier_counts.get(tier,0)))
 
-    ranked=d[d["Pick"].isin(["HOME","AWAY"])].sort_values(["Selection score","Confidence %"],ascending=False).head(int(topn))
+    ranked=d[d["Pick"].isin(["HOME","AWAY"])].sort_values(["Confidence %","Selection score"],ascending=False).head(int(topn))
     for pos,(_,r) in enumerate(ranked.iterrows(),1):
         audit=r["V18 audit"]; team=_team_for_pick(r); price=_price_for(r)
         tier_class="v171-good" if audit["tier"]=="ELITE" else "v171-hot" if audit["tier"]=="STRONG" else ""
-        badge=f'<span class="v171-badge {tier_class}">{html.escape(audit["tier"])}</span>'
+        badge=f'<span class="v171-badge {tier_class}">{html.escape(audit["tier"])}</span><span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'
         price_badge=f'<span class="v171-badge">Odds {html.escape(price)}</span>' if price!="—" else '<span class="v171-badge">Odds not verified</span>'
         reason=(audit["positives"][0] if audit["positives"] else audit["concerns"][0] if audit["concerns"] else r.get("Decision reason",""))
-        card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Match"]))+' • '+html.escape(str(r.get("Kickoff UK","")))+'</div></div><div class="v171-prob">'+f'{audit["score"]:.0f}'+'<small>selection score</small></div></div><div class="v171-badges">'+badge+price_badge+'<span class="v171-badge">'+html.escape(str(r.get("Decision","")))+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
+        card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Match"]))+' • '+html.escape(str(r.get("Kickoff UK","")))+'</div></div><div class="v171-prob">'+f'{float(r["Confidence %"]):.0f}'+'%<small>model win chance</small></div></div><div class="v171-badges">'+badge+price_badge+'<span class="v171-badge">'+html.escape(str(r.get("Decision","")))+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
         st.markdown(card,unsafe_allow_html=True)
         with st.expander("Why this pick?",expanded=False): _detail_panel(r)
 
     target_odds=acca_target_return/acca_stake
-    acca=build_acca(d.to_dict("records"),target_odds=target_odds,min_legs=4,max_legs=7)
-    st.markdown('<div class="v171-lens">Acca builder</div>',unsafe_allow_html=True)
-    if acca["status"]=="READY":
+    leg_counts=(5,6) if acca_size=="Best of 5 or 6" else ((5,) if acca_size=="5 teams" else (6,))
+    acca=build_best_chance_acca(d.to_dict("records"),target_odds=target_odds,leg_counts=leg_counts)
+    st.markdown('<div class="v171-lens">Personalised best-chance acca</div>',unsafe_allow_html=True)
+    st.caption(f'Goal: £{acca_stake:,.2f} → £{acca_target_return:,.2f} • Required combined odds: {target_odds:.2f} • {acca_size}')
+    if acca["status"] in ("READY","BELOW_TARGET"):
         acca_rows=[]
         for leg in acca["legs"]:
             audit=leg["V18 audit"]
             team=leg["Home team"] if leg["Pick"]=="HOME" else leg["Away team"]
-            acca_rows.append({"Team to win":_short_team(team),"Match":leg["Match"],"Kickoff":leg.get("Kickoff UK"),"Best verified odds":leg.get("Best market odds"),"V18 score":audit["score"]})
+            acca_rows.append({"Team to win":_short_team(team),"Model win %":leg.get("Confidence %"),"Best verified odds":leg.get("Best market odds"),"Kickoff":leg.get("Kickoff UK"),"Evidence tier":audit["tier"]})
         st.dataframe(pd.DataFrame(acca_rows),hide_index=True,use_container_width=True)
         payout=acca_stake*acca["combined_odds"]
-        a1,a2,a3=st.columns(3)
-        a1.metric("Legs",len(acca["legs"])); a2.metric("Combined odds",f'{acca["combined_odds"]:.2f}'); a3.metric("Theoretical return",f'£{payout:,.2f}')
-        st.success(f'Built automatically from ELITE outright-winner selections with verified current prices. Target: {target_odds:.2f} decimal.')
+        a1,a2,a3,a4=st.columns(4)
+        a1.metric("Teams",len(acca["legs"])); a2.metric("Combined odds",f'{acca["combined_odds"]:.2f}'); a3.metric("Potential return",f'£{payout:,.2f}'); a4.metric("Model joint chance",f'{acca["joint_probability"]:.2f}%')
+        if acca["status"]=="READY":
+            st.success("This is the highest modelled joint-success probability among the verified five/six-team combinations that reach your target.")
+        else:
+            st.warning(f'The requested return cannot be reached by a verified {acca_size.lower()} combination in this date range. Closest available potential return: £{payout:,.2f}.')
     else:
-        st.warning("No acca built — "+acca["reason"]+" V19 will not add weaker or unverified legs just to reach the target.")
-    st.caption("Missing injury, lineup or true-xG evidence reduces the score automatically; it never creates false certainty.")
+        st.warning("No acca built — "+acca["reason"])
+    st.caption("This is an optimisation, not a guarantee. Joint chance assumes the match results are independent; injuries, lineups and late price changes can materially alter it.")
 
     with st.expander(f"All other matches ({len(d)})",expanded=False):
         for _,r in d.sort_values("Confidence %",ascending=False).iterrows():
@@ -1432,4 +1465,4 @@ if True:  # V19 automatically analyses the current selections; no action button 
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not st.session_state.get("odds_key","").strip(): st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V19 keeps the V18 safety engine: acca legs must be outright winners rated ELITE and BET, backed by a matched current UK 1X2 price, verified fixture and kickoff, bookmaker depth, minimum confidence, edge and positive EV.")
+st.caption("V19 ranks the default shortlist by win probability. The personalised acca optimiser may use non-value favourites, but only when fixture identity, kickoff, current 1X2 price, bookmaker agreement and market depth are verified.")
