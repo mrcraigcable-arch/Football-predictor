@@ -11,7 +11,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss
 from v18_selection import WEIGHTS, build_acca, score_selection
 
-st.set_page_config(page_title="Craig's Football Predictor V18", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V19", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 
 
 
@@ -135,7 +135,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V18</span>
+ <span class="v14-chip">V19</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -189,7 +189,7 @@ st.markdown("""
 .v14-brand{position:relative;overflow:hidden;border:1px solid rgba(32,232,132,.38)!important;border-radius:24px!important;padding:18px 19px!important;background:linear-gradient(135deg,rgba(11,40,47,.96),rgba(5,18,30,.98))!important;box-shadow:0 16px 45px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.04)!important}
 .v14-brand:after{content:"";position:absolute;width:170px;height:170px;border-radius:50%;right:-70px;top:-95px;background:rgba(32,232,132,.10);filter:blur(4px)}
 .v14-chip,.vbadge{border:1px solid rgba(32,232,132,.55)!important;background:rgba(9,52,39,.72)!important;color:#50f3a5!important}
-.hero{display:none!important}
+.hero,.brand{display:none!important}
 .v14-title,.brand-name{font-weight:900!important}.v14-sub,.brand-sub{color:#91a8bc!important}
 /* compact polished controls */
 div[data-baseweb="select"]>div,[data-testid="stDateInput"] input,[data-testid="stNumberInput"] input{background:#0a1826!important;border-color:#1c3b52!important}
@@ -224,6 +224,19 @@ hr{border-color:#173247!important}
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<style>
+/* V19: the decision is the interface. Settings stay available without
+   competing with today's selections. */
+[data-testid="stSidebar"]{background:#04111c;border-right:1px solid #17384f}
+[data-testid="stSidebar"] .stButton>button{min-height:46px!important}
+.v19-intro{margin:-4px 0 14px;color:#a9bdce;font-size:.94rem}
+.v19-auto{display:inline-flex;align-items:center;gap:7px;border:1px solid #1d7653;
+ border-radius:999px;padding:5px 10px;color:#62efad;background:#08271d;font-size:.76rem;font-weight:850}
+</style>
+<div class="v19-intro"><span class="v19-auto">● AUTO ANALYSIS ON</span>&nbsp;&nbsp; Today's strongest decisions appear automatically. Open Settings only when you want to change the defaults.</div>
+""", unsafe_allow_html=True)
+
 RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
 LEAGUES={
     "Premier League":{"of":"en.1","odds":"soccer_epl"},
@@ -233,6 +246,44 @@ LEAGUES={
     "Serie A":{"of":"it.1","odds":"soccer_italy_serie_a"},
     "Ligue 1":{"of":"fr.1","odds":"soccer_france_ligue_one"},
 }
+
+# V19's only everyday controls live at the top of the collapsed sidebar.
+try:
+    _secret_odds_key=st.secrets.get("ODDS_API_KEY","")
+except Exception:
+    _secret_odds_key=""
+if _secret_odds_key and not st.session_state.get("odds_key"):
+    st.session_state["odds_key"]=_secret_odds_key
+
+st.sidebar.header("⚙️ Settings")
+st.sidebar.caption("Safe defaults are applied automatically. Changes refresh the analysis.")
+scope=st.sidebar.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
+day=st.sidebar.date_input("Match date",date.today())
+entered=st.sidebar.text_input("The Odds API key",value=st.session_state.get("odds_key",""),
+                      type="password",placeholder="Paste free The Odds API key",
+                      help="Held in this Streamlit session; it is not written to your GitHub repository.")
+c1,c2=st.sidebar.columns(2)
+with c1:
+    if st.button("Connect odds",use_container_width=True):
+        if entered.strip():
+            st.session_state["odds_key"]=entered.strip()
+            st.success("Odds key loaded for this session.")
+        else: st.warning("Paste the key first.")
+with c2:
+    if st.button("Clear odds key",use_container_width=True):
+        st.session_state.pop("odds_key",None); st.rerun()
+
+with st.sidebar.expander("Decision rules",expanded=False):
+    st.caption("Conservative defaults; rules are never loosened to create picks.")
+    min_conf=st.number_input("Minimum confidence (%)",min_value=45,max_value=90,value=62,step=1)
+    min_edge=st.number_input("Minimum market edge (pp)",min_value=0,max_value=20,value=4,step=1)
+    min_books=st.number_input("Minimum bookmakers",min_value=3,max_value=25,value=8,step=1)
+    max_edge=st.number_input("Auto-audit above edge (pp)",min_value=8,max_value=30,value=15,step=1)
+    topn=st.number_input("Show top predictions",min_value=3,max_value=20,value=10,step=1)
+    acca_stake=st.number_input("Acca stake (£)",min_value=1.0,max_value=1000.0,value=10.0,step=1.0)
+    acca_target_return=st.number_input("Target total return (£)",min_value=10.0,max_value=100000.0,value=500.0,step=10.0)
+
+st.sidebar.caption("Advanced model checks are below; they are not needed for daily use.")
 
 # V15 league-aware promotion policy. These choices are based on the V14
 # chronological unseen-data calibration tests at the 62% audit threshold.
@@ -639,8 +690,7 @@ def calibration_grade(gap):
     a=abs(float(gap))
     return "GOOD" if a<=3 else ("WATCH" if a<=6 else "POOR")
 
-st.markdown('<div class="v14-section">🧪 Model validation</div>', unsafe_allow_html=True)
-with st.expander("Run chronological backtest",expanded=False):
+with st.sidebar.expander("🧪 Chronological backtest",expanded=False):
     st.caption("Train on the earlier 80% of historical matches and test only on the later unseen 20%.")
     bt_league=st.selectbox("Backtest competition",list(LEAGUES),key="bt_league")
     if st.button("RUN BACKTEST",use_container_width=True,key="run_bt"):
@@ -756,7 +806,7 @@ def walk_forward_model_lab(code):
     return summary,folds
 
 
-st.markdown("""
+st.sidebar.markdown("""
 <div style="background:linear-gradient(135deg,#063b31,#08253d);border:1px solid #00e59b;
 border-radius:20px;padding:18px;margin:12px 0 18px 0;">
 <div style="font-size:13px;color:#77f7c7;font-weight:800;letter-spacing:.08em;">LIVE ENGINE</div>
@@ -767,8 +817,7 @@ V15 promotes only the league-specific probability treatment supported by V14 uns
 </div>
 """,unsafe_allow_html=True)
 
-st.markdown('<div class="v14-section">🧠 V14 Model Lab</div>',unsafe_allow_html=True)
-with st.expander("Walk-forward model comparison",expanded=False):
+with st.sidebar.expander("🧠 Walk-forward model comparison",expanded=False):
     st.caption("V14 repeatedly trains only on the past and predicts the next chronological block. Three model configurations compete on exactly the same unseen matches.")
     lab_league=st.selectbox("Model Lab competition",list(LEAGUES),key="v14_lab_league")
     if st.button("RUN V15 MODEL LAB",use_container_width=True,key="run_v14_lab"):
@@ -897,9 +946,8 @@ def v14_calibration_lab(code,min_conf_pct):
                         "Calibration gap pp":round((q["confidence"].mean()-q["correct"].mean())*100,1)})
     return pd.DataFrame(out)
 
-st.markdown("### 🎯 V15 Validation Lab — V14 Evidence")
-st.caption("V14 learns its probability correction only from earlier matches, then tests the corrected probabilities on later unseen matches.")
-with st.expander("Run calibration comparison",expanded=False):
+with st.sidebar.expander("🎯 Calibration comparison",expanded=False):
+    st.caption("Learns probability correction only from earlier matches, then tests on later unseen matches.")
     cal_league=st.selectbox("Calibration competition",list(LEAGUES),key="v14_cal_league")
     cal_conf=st.number_input("Audit threshold (%)",35,90,62,1,key="v14_cal_conf")
     if st.button("RUN CALIBRATION TEST",use_container_width=True,key="run_v14_cal"):
@@ -917,9 +965,8 @@ with st.expander("Run calibration comparison",expanded=False):
                 st.error(f"Calibration test could not complete: {e}")
 
 
-st.markdown("### 💷 V15 Strategy Audit")
-st.caption("Tests the promoted live model on later unseen matches. V14 will not fabricate historical odds: ROI stays disabled until verified historical prices are available in the dataset.")
-with st.expander("Run confidence strategy audit",expanded=False):
+with st.sidebar.expander("💷 Confidence strategy audit",expanded=False):
+    st.caption("Tests on later unseen matches. ROI stays disabled without verified historical prices.")
     audit_league=st.selectbox("Strategy competition",list(LEAGUES),key="v14_audit_league")
     audit_conf=st.number_input("Minimum model confidence (%)",min_value=35,max_value=90,value=62,step=1,key="v14_audit_conf")
     if st.button("RUN STRATEGY AUDIT",use_container_width=True,key="run_v14_audit"):
@@ -944,45 +991,12 @@ with st.expander("Run confidence strategy audit",expanded=False):
                 st.error(f"Strategy audit could not complete: {e}")
 
 
-st.markdown("### 🧭 V15.2 Market-Integrity Fix")
-st.caption("The live predictor now chooses the probability engine per competition from V14 unseen-data evidence. It never applies calibration globally.")
-with st.expander("View league engine policy",expanded=False):
+with st.sidebar.expander("🧭 League engine policy",expanded=False):
+    st.caption("The probability engine is selected per competition from unseen-data evidence.")
     policy_rows=[]
     for _league,_p in V15_POLICY.items():
         policy_rows.append({"Competition":_league,"Live engine":"Calibrated Conservative" if _p["engine"]=="calibrated" else "Raw Conservative","Status":_p["status"],"Evidence":_p["evidence"]})
     st.dataframe(pd.DataFrame(policy_rows),hide_index=True,use_container_width=True)
-
-st.subheader("🔐 Live data connection")
-entered=st.text_input("The Odds API key",value=st.session_state.get("odds_key",""),
-                      type="password",placeholder="Paste free The Odds API key",
-                      help="Held in this Streamlit session; it is not written to your GitHub repository.")
-c1,c2=st.columns(2)
-with c1:
-    if st.button("Connect odds",use_container_width=True):
-        if entered.strip():
-            st.session_state["odds_key"]=entered.strip()
-            st.success("Odds key loaded for this session.")
-        else: st.warning("Paste the key first.")
-with c2:
-    if st.button("Clear odds key",use_container_width=True):
-        st.session_state.pop("odds_key",None); st.rerun()
-
-st.subheader("⚙️ Model parameters")
-st.caption("Tap the number boxes to change them. No sliders, so scrolling cannot accidentally alter your rules.")
-pc1,pc2=st.columns(2)
-with pc1:
-    min_conf=st.number_input("Minimum confidence (%)",min_value=45,max_value=90,value=62,step=1)
-    min_edge=st.number_input("Minimum market edge (pp)",min_value=0,max_value=20,value=4,step=1)
-    min_books=st.number_input("Minimum bookmakers",min_value=3,max_value=25,value=8,step=1)
-with pc2:
-    max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
-    topn=st.number_input("Show top predictions",min_value=3,max_value=20,value=10,step=1)
-    day=st.date_input("Match date",date.today())
-ac1,ac2=st.columns(2)
-with ac1:
-    acca_stake=st.number_input("Acca stake (£)",min_value=1.0,max_value=1000.0,value=10.0,step=1.0)
-with ac2:
-    acca_target_return=st.number_input("Target total return (£)",min_value=10.0,max_value=100000.0,value=500.0,step=10.0)
 
 # --- V16 live validation ledger -------------------------------------------------
 LEDGER_COLUMNS=[
@@ -1087,11 +1101,7 @@ def _tracker_panel():
             st.dataframe(pd.DataFrame(perf).sort_values("Bets",ascending=False),use_container_width=True,hide_index=True)
     st.download_button("⬇️ EXPORT VALIDATION LEDGER",data=led.to_csv(index=False).encode("utf-8"),file_name="football_predictor_v16_live_ledger.csv",mime="text/csv",use_container_width=True)
 
-scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
-
-st.info("V17 • CLEAN PICKS DASHBOARD — the answer comes first; detailed evidence is one tap away.")
-
-if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
+if True:  # V19 automatically analyses the current selections; no action button required.
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
     odds_key=st.session_state.get("odds_key","").strip()
     quota_remaining=None
@@ -1373,7 +1383,7 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     .v171-badges{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0 8px}.v171-badge{border:1px solid #28465d;border-radius:999px;padding:4px 8px;font-size:.72rem;font-weight:850;color:#cbd9e5}.v171-good{border-color:#1f7d55;color:#65efaa}.v171-hot{border-color:#8b6d18;color:#ffd66d}.v171-reason{font-size:.86rem;color:#c5d3df;line-height:1.4}.v171-empty{border:1px dashed #28465d;border-radius:16px;padding:14px;color:#91a8bc;margin-bottom:8px}
     @media(max-width:520px){.v171-card{padding:13px 14px}.v171-team{font-size:1.12rem}.v171-prob{font-size:1.42rem}}
     </style>
-    <div class="v171-head"><h2>🎯 Craig's Acca Shortlist</h2><p>Probability + form + scoring profile + verified value − uncertainty penalties.</p></div>
+    <div class="v171-head"><h2>Today's best picks</h2><p>Ranked automatically by probability, form, scoring profile and verified value.</p></div>
     """,unsafe_allow_html=True)
 
     tier_order=["ELITE","STRONG","WATCHLIST","REJECT"]
@@ -1390,11 +1400,11 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         reason=(audit["positives"][0] if audit["positives"] else audit["concerns"][0] if audit["concerns"] else r.get("Decision reason",""))
         card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Match"]))+' • '+html.escape(str(r.get("Kickoff UK","")))+'</div></div><div class="v171-prob">'+f'{audit["score"]:.0f}'+'<small>selection score</small></div></div><div class="v171-badges">'+badge+price_badge+'<span class="v171-badge">'+html.escape(str(r.get("Decision","")))+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
         st.markdown(card,unsafe_allow_html=True)
-        with st.expander("See full V18 evidence",expanded=False): _detail_panel(r)
+        with st.expander("Why this pick?",expanded=False): _detail_panel(r)
 
     target_odds=acca_target_return/acca_stake
     acca=build_acca(d.to_dict("records"),target_odds=target_odds,min_legs=4,max_legs=7)
-    st.markdown('<div class="v171-lens">🧾 Auto-built acca</div>',unsafe_allow_html=True)
+    st.markdown('<div class="v171-lens">Acca builder</div>',unsafe_allow_html=True)
     if acca["status"]=="READY":
         acca_rows=[]
         for leg in acca["legs"]:
@@ -1405,39 +1415,10 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
         payout=acca_stake*acca["combined_odds"]
         a1,a2,a3=st.columns(3)
         a1.metric("Legs",len(acca["legs"])); a2.metric("Combined odds",f'{acca["combined_odds"]:.2f}'); a3.metric("Theoretical return",f'£{payout:,.2f}')
-        st.success(f'Every leg is an outright winner marked ELITE, with a verified current price and a BET decision. Target was {target_odds:.2f} decimal.')
+        st.success(f'Built automatically from ELITE outright-winner selections with verified current prices. Target: {target_odds:.2f} decimal.')
     else:
-        st.warning("NO ACCA BUILT — "+acca["reason"]+" V18 will not add weaker or unverified legs just to reach the requested return.")
-    st.caption("V18 cannot verify injuries, confirmed lineups or true xG until those providers are connected. Missing evidence reduces the score and is shown inside each match audit.")
-
-    st.markdown('<div class="v171-head"><h2>Supporting views</h2><p>Probability and value lenses retained for comparison.</p></div>',unsafe_allow_html=True)
-
-    likely=d[d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
-    value=d[d["Decision"].eq("BET")].copy()
-    if not value.empty:
-        value["_vscore"]=pd.to_numeric(value["Edge pp"],errors="coerce").fillna(0)+0.15*pd.to_numeric(value["EV %"],errors="coerce").fillna(0)
-        value=value.sort_values(["_vscore","Confidence %"],ascending=False).head(5)
-    both=d[(d["Decision"].eq("BET")) & (d["Confidence %"].ge(68.0)) & d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
-
-    def _render_clean_rows(frame,lens):
-        if frame.empty:
-            msg={"likely":"No win selections available.","value":"No verified value bets today — the app has not lowered the rules to create activity.","both":"No selection currently has both 68%+ win probability and verified value."}[lens]
-            st.markdown('<div class="v171-empty">'+html.escape(msg)+'</div>',unsafe_allow_html=True); return
-        for pos,(_,r) in enumerate(frame.iterrows(),1):
-            team=_team_for_pick(r); conf=_num(r,"Confidence %",0); price=_price_for(r); ctx=_context_signal_v171(r); market=_market_signal(r); val=_validation_word(r)
-            odds_badge='<span class="v171-badge">Odds '+html.escape(price)+'</span>' if price!="—" else '<span class="v171-badge">Odds not verified</span>'
-            main_badge='<span class="v171-badge v171-good">VALUE</span>' if r.get("Decision")=="BET" else '<span class="v171-badge">WIN PICK</span>'
-            if lens=="both": main_badge='<span class="v171-badge v171-hot">WIN + VALUE</span>'
-            card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Pick"]))+' • '+html.escape(str(r.get("League","")))+'</div></div><div class="v171-prob">'+f'{conf:.0f}'+'%<small>model chance</small></div></div><div class="v171-badges">'+main_badge+odds_badge+'<span class="v171-badge">Model '+html.escape(val)+'</span><span class="v171-badge">Market '+market+'</span><span class="v171-badge">Context '+ctx+'</span></div><div class="v171-reason">'+html.escape(_clean_reason(r,lens))+'</div></div>')
-            st.markdown(card,unsafe_allow_html=True)
-            with st.expander("See full analysis",expanded=False): _detail_panel(r)
-
-    st.markdown('<div class="v171-lens">🏆 Most likely winners</div>',unsafe_allow_html=True)
-    st.caption("Highest model win probabilities. Price does not decide this ranking."); _render_clean_rows(likely,"likely")
-    st.markdown('<div class="v171-lens">💰 Best value bets</div>',unsafe_allow_html=True)
-    st.caption("Only selections that pass the existing bookmaker, edge, EV and verification rules."); _render_clean_rows(value,"value")
-    st.markdown('<div class="v171-lens">🔥 Win chance + value</div>',unsafe_allow_html=True)
-    st.caption("The overlap: 68%+ predicted win probability and a verified value price."); _render_clean_rows(both,"both")
+        st.warning("No acca built — "+acca["reason"]+" V19 will not add weaker or unverified legs just to reach the target.")
+    st.caption("Missing injury, lineup or true-xG evidence reduces the score automatically; it never creates false certainty.")
 
     with st.expander(f"All other matches ({len(d)})",expanded=False):
         for _,r in d.sort_values("Confidence %",ascending=False).iterrows():
@@ -1451,13 +1432,4 @@ if st.button("🔎 ANALYZE MATCHES",use_container_width=True,type="primary"):
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not st.session_state.get("odds_key","").strip(): st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V18 rule: an acca leg must be an outright winner rated ELITE and BET. That requires a matched current UK 1X2 price, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Missing evidence lowers the selection score; rules are never loosened to fill an acca.")
-
-st.markdown("""
-<div class="v14-nav">
- <span class="active">🏠<br>Matches</span>
- <span>📊<br>Analysis</span>
- <span>🎯<br>Calibrate</span>
- <span>⚙️<br>Settings</span>
-</div>
-""", unsafe_allow_html=True)
+st.caption("V19 keeps the V18 safety engine: acca legs must be outright winners rated ELITE and BET, backed by a matched current UK 1X2 price, verified fixture and kickoff, bookmaker depth, minimum confidence, edge and positive EV.")

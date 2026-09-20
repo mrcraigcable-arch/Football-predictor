@@ -1,4 +1,4 @@
-# Craig's Football Predictor V18
+# Craig's Football Predictor V19
 
 Multi-league Streamlit research model for 1X2 probabilities and market-edge screening.
 
@@ -12,8 +12,14 @@ Supported:
 - Serie A
 - Ligue 1
 
-V18 adds a transparent manual-selection layer on top of the calibrated 1X2
-model. It grades every outright pick as ELITE, STRONG, WATCHLIST or REJECT from
+V19 turns the predictor into an automatic, picks-first dashboard. It runs when
+the app opens, shows one ranked shortlist and an automatic acca result, and
+moves API controls, thresholds and model laboratories into a collapsed Settings
+sidebar. The redundant comparison lists and decorative bottom navigation have
+been removed so the same selection is not repeated in several places.
+
+The V18 safety engine remains underneath the new interface. It grades every
+outright pick as ELITE, STRONG, WATCHLIST or REJECT from
 model probability, scoring profile, venue-adjusted form, verified bookmaker
 value, availability evidence, opponent strength and supporting indicators.
 
