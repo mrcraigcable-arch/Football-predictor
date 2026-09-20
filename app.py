@@ -14,9 +14,9 @@ from sklearn.metrics import log_loss
 
 
 
-# --- V18 DECISION / SAFETY ENGINE (embedded in V19.5) ---------------------------
+# --- V18 DECISION / SAFETY ENGINE (embedded in V19.8) ---------------------------
 # Kept inside app.py so Streamlit cannot deploy the UI and selection engine from
-# different commits. This is the V18 scoring/acca logic preserved in V19.5.
+# different commits. This is the V18 scoring/acca logic preserved in V19.8.
 WEIGHTS = {
     "model_probability": 30,
     "goals_profile": 20,
@@ -36,6 +36,40 @@ def _v18_number(value, default=None):
 
 def _v18_clip(value, low=0.0, high=100.0):
     return max(low,min(high,float(value)))
+
+LIVE_ACTION_WINDOW_MINUTES = 150
+
+def _kickoff_state(kickoff_iso, live_window_minutes=LIVE_ACTION_WINDOW_MINUTES):
+    """Return UPCOMING, LIVE, STALE or UNKNOWN from the verified kickoff.
+
+    LIVE means the scheduled kickoff has passed but the match is still inside a
+    conservative action window. The completed-results feed remains the primary
+    source for FINAL status; STALE is a safety backstop for feed lag so a match
+    cannot remain recommendable for hours after it should have finished.
+    """
+    if not kickoff_iso:
+        return {"state":"UNKNOWN","minutes":None,"label":"Kickoff time unavailable"}
+    try:
+        kickoff=pd.to_datetime(kickoff_iso,utc=True,errors="coerce")
+        if pd.isna(kickoff):
+            return {"state":"UNKNOWN","minutes":None,"label":"Kickoff time unavailable"}
+        now=pd.Timestamp.now(tz="UTC")
+        delta=(now-kickoff).total_seconds()/60.0
+        if delta < 0:
+            mins_to=max(0,int(round(-delta)))
+            return {"state":"UPCOMING","minutes":mins_to,"label":f"Starts in ~{mins_to} min"}
+        mins_since=max(0,int(delta))
+        if mins_since <= int(live_window_minutes):
+            return {"state":"LIVE","minutes":mins_since,"label":f"LIVE • started ~{mins_since} min ago"}
+        return {"state":"STALE","minutes":mins_since,"label":""}
+    except Exception:
+        return {"state":"UNKNOWN","minutes":None,"label":"Kickoff time unavailable"}
+
+def _kickoff_is_future(kickoff_iso):
+    return _kickoff_state(kickoff_iso)["state"] == "UPCOMING"
+
+def _kickoff_is_actionable(kickoff_iso):
+    return _kickoff_state(kickoff_iso)["state"] in ("UPCOMING","LIVE")
 
 def _v18_side(context,pick):
     if not isinstance(context,dict): return {},{}
@@ -113,6 +147,8 @@ def score_selection(row):
     if pick=="DRAW": penalties.append((20,"Draws are excluded from the acca shortlist"))
     if form_advantage is not None and form_advantage<=-.35: penalties.append((7,"Recent form conflicts with the model pick"))
     if goals_advantage is not None and goals_advantage<0: penalties.append((6,"Scoring profile conflicts with the model pick"))
+    if str(row.get("Game state","")).upper()=="LIVE":
+        concerns.append("Match has started; the model evidence is pre-match and the current score is not ingested")
     penalty_total=sum(p for p,_ in penalties)
     final_score=round(_v18_clip(base_score-penalty_total),1)
     outright=pick in ("HOME","AWAY")
@@ -151,8 +187,12 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
         audit=row.get("V18 audit") or score_selection(row); pick=str(row.get("Pick","")).upper()
         price=_v18_number(row.get("Best market odds")); prob=_v18_number(row.get("Confidence %")); books=_v18_number(row.get("Bookmakers"),0)
         diag=row.get("Market diagnostic") or {}; accepted=isinstance(diag,dict) and diag.get("stage")=="accepted"
-        if pick in ("HOME","AWAY") and price is not None and price>1.01 and prob is not None and 0<prob<100 and str(row.get("Market integrity",""))=="OK" and books>=min_books and bool(row.get("Kickoff ISO")) and accepted:
-            candidates.append({"row":row,"audit":audit,"price":price,"probability":prob/100.0})
+        game_state=str(row.get("Game state") or _kickoff_state(row.get("Kickoff ISO"))["state"]).upper()
+        live_market_prob=_v18_number(row.get("Market fair %"))
+        ranking_prob=(live_market_prob/100.0) if game_state=="LIVE" and live_market_prob is not None and 0<live_market_prob<100 else (prob/100.0 if prob is not None else None)
+        if pick in ("HOME","AWAY") and price is not None and price>1.01 and ranking_prob is not None and 0<ranking_prob<1 and str(row.get("Market integrity",""))=="OK" and books>=min_books and game_state in ("UPCOMING","LIVE") and accepted:
+            candidates.append({"row":row,"audit":audit,"price":price,"probability":ranking_prob,
+                               "probability_source":"live market fair" if game_state=="LIVE" and live_market_prob is not None else "pre-match model"})
     by_prob=sorted(candidates,key=lambda x:x["probability"],reverse=True)[:20]
     by_eff=sorted(candidates,key=lambda x:x["probability"]*(x["price"]**.5),reverse=True)[:12]
     pool=[]; seen=set()
@@ -181,7 +221,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest estimated joint success probability among combinations reaching the target." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V19.5", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V20 Street", page_icon="📈", layout="wide")
 
 
 
@@ -305,10 +345,10 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V19.5</span>
+ <span class="v14-chip">V20 STREET</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
- <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
+ <div class="v14-sub">Nitrous-inspired dashboard styling with evidence-backed football decisions. • Real market comparison</div></div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -342,7 +382,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V19.5</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V20 STREET</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -392,6 +432,143 @@ hr{border-color:#173247!important}
  h2{font-size:1.42rem!important}
 }
 </style>
+""", unsafe_allow_html=True)
+
+
+st.markdown("""
+<style>
+/* --- V20 STREET EDITION VISUAL LAYER --------------------------------------- */
+:root{
+  --street-bg:#04070d; --street-panel:#0a1119; --street-panel2:#101924;
+  --street-line:#243446; --street-text:#f4f8ff; --street-muted:#9db0c2;
+  --nitro:#2be7ff; --turbo:#55ff9e; --flame:#ff8a1d; --mag:#ff4fd8;
+}
+.stApp{
+  background:
+    radial-gradient(900px 380px at 10% -10%, rgba(255,138,29,.18), transparent 55%),
+    radial-gradient(760px 320px at 100% 0%, rgba(43,231,255,.16), transparent 54%),
+    linear-gradient(180deg, #080c12 0%, #03060a 100%) !important;
+  color:var(--street-text) !important;
+}
+.block-container{max-width:900px!important;padding-top:.5rem!important;padding-bottom:6.6rem!important}
+.brand,.hero{display:none!important}
+.v14-brand{
+  position:relative; overflow:hidden;
+  border:1px solid rgba(255,255,255,.10)!important;
+  border-radius:26px!important;
+  padding:20px 20px 18px!important;
+  background:
+    linear-gradient(135deg, rgba(13,18,27,.97), rgba(7,11,18,.98))!important;
+  box-shadow:0 18px 48px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05)!important;
+}
+.v14-brand:before{
+  content:""; position:absolute; inset:0;
+  background:
+    linear-gradient(115deg, transparent 0 14%, rgba(255,138,29,.10) 14.5% 17%, transparent 17.5% 100%),
+    linear-gradient(115deg, transparent 0 18%, rgba(43,231,255,.11) 18.5% 21%, transparent 21.5% 100%),
+    repeating-linear-gradient(135deg, rgba(255,255,255,.018) 0 9px, rgba(0,0,0,0) 9px 18px);
+  pointer-events:none;
+}
+.v14-brand:after{
+  content:""; position:absolute; right:-80px; top:-76px; width:220px; height:220px; border-radius:50%;
+  background:radial-gradient(circle, rgba(43,231,255,.20) 0%, rgba(43,231,255,.08) 36%, transparent 68%);
+  filter:blur(6px);
+}
+.v14-chip,.vbadge{
+  border:1px solid rgba(255,138,29,.6)!important;
+  background:linear-gradient(90deg, rgba(255,138,29,.18), rgba(255,79,216,.16))!important;
+  color:#ffd4aa!important; font-weight:900!important; letter-spacing:.08em!important;
+}
+.v14-logo{filter:drop-shadow(0 0 11px rgba(43,231,255,.55))!important}
+.v14-title{font-size:1.58rem!important; letter-spacing:.02em!important; text-transform:uppercase!important}
+.v14-title b{color:#ffffff!important}
+.v14-sub{color:#c0cddd!important; max-width:640px}
+.v14-sub:after{
+  content:"Street tuned aesthetic • fast reads • verified markets only";
+  display:block; margin-top:6px; color:#8fa7bc; font-size:.82rem; letter-spacing:.02em;
+}
+
+/* Section blocks / inputs */
+div[data-testid="stVerticalBlockBorderWrapper"]{
+  border:1px solid rgba(255,255,255,.07)!important;
+  border-radius:22px!important;
+  background:
+    linear-gradient(180deg, rgba(15,21,30,.96), rgba(8,12,18,.97))!important;
+  box-shadow:0 12px 30px rgba(0,0,0,.24)!important;
+}
+div[data-testid="stExpander"]{
+  border:1px solid rgba(61,89,115,.58)!important;
+  background:linear-gradient(180deg, rgba(13,19,28,.98), rgba(8,12,18,.98))!important;
+  border-radius:20px!important;
+  position:relative;
+}
+div[data-testid="stExpander"]:before{
+  content:""; position:absolute; left:0; top:0; bottom:0; width:5px;
+  background:linear-gradient(180deg, var(--flame), var(--nitro));
+}
+div[data-testid="stExpander"] details summary{min-height:74px!important}
+
+h2,h3{letter-spacing:.01em!important}
+h2{color:#f7fbff!important; text-transform:uppercase!important; font-size:1.45rem!important}
+label[data-testid="stWidgetLabel"] p{color:#dbe8f6!important; text-transform:uppercase; letter-spacing:.04em; font-size:.78rem}
+
+/* Inputs */
+div[data-baseweb="select"]>div,
+[data-testid="stDateInput"] input,
+[data-testid="stNumberInput"] input{
+  background:linear-gradient(180deg,#121b26,#0c141d)!important;
+  border:1px solid #314457!important; color:#fff!important;
+  border-radius:14px!important;
+}
+
+/* Buttons */
+.stButton>button,
+[data-testid="stFormSubmitButton"] button,
+[data-testid="stDownloadButton"] button{
+  min-height:56px!important; border-radius:16px!important; font-weight:900!important;
+  letter-spacing:.03em!important; text-transform:uppercase!important;
+  color:#fff!important; border:1px solid rgba(255,255,255,.10)!important;
+  background:
+    linear-gradient(100deg, rgba(255,138,29,.95), rgba(255,79,216,.86) 52%, rgba(43,231,255,.90))!important;
+  box-shadow:0 10px 28px rgba(255,138,29,.18), 0 0 0 1px rgba(255,255,255,.04) inset!important;
+}
+.stButton>button:hover,
+[data-testid="stFormSubmitButton"] button:hover,
+[data-testid="stDownloadButton"] button:hover{filter:brightness(1.05)!important; transform:translateY(-1px)}
+
+/* Metrics */
+div[data-testid="stMetric"]{
+  position:relative; overflow:hidden;
+  min-height:98px!important;
+  border-radius:18px!important; border:1px solid rgba(255,255,255,.08)!important;
+  background:linear-gradient(180deg, rgba(15,22,31,.96), rgba(8,13,19,.98))!important;
+}
+div[data-testid="stMetric"]:before{
+  content:""; position:absolute; left:0; top:0; right:0; height:4px;
+  background:linear-gradient(90deg, var(--flame), var(--mag), var(--nitro));
+}
+div[data-testid="stMetricLabel"]{color:#9fb0c2!important}
+div[data-testid="stMetricValue"]{color:#fff!important}
+
+/* Alerts / tables */
+[data-testid="stAlert"]{border-radius:18px!important}
+[data-testid="stDataFrame"]{border:1px solid rgba(70,95,122,.65)!important; border-radius:18px!important}
+
+/* Bottom nav */
+.v14-nav{background:rgba(6,10,16,.95)!important;border-top:1px solid rgba(255,255,255,.10)!important}
+.v14-nav .active{color:var(--flame)!important}
+
+/* Mobile */
+@media(max-width:699px){
+  .block-container{padding-left:.72rem!important;padding-right:.72rem!important}
+  .v14-title{font-size:1.24rem!important}
+  .v14-sub{font-size:.86rem!important}
+  div[data-testid="stMetricValue"]{font-size:1.44rem!important}
+}
+</style>
+<div style="margin:-2px 0 12px; padding:10px 14px; border-radius:16px; border:1px solid rgba(255,138,29,.22); background:linear-gradient(90deg, rgba(255,138,29,.08), rgba(43,231,255,.06)); color:#c8d7e7; font-size:.88rem;">
+  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · Fast &amp; Furious-inspired visual layer applied. All V19.8 selection, verification and acca logic preserved.
+</div>
 """, unsafe_allow_html=True)
 
 RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
@@ -1124,7 +1301,7 @@ with st.expander("View league engine policy",expanded=False):
 
 st.subheader("🔐 Live data connection")
 
-# V19.5: load the Odds API key automatically from Streamlit Secrets.
+# V19.8: load the Odds API key automatically from Streamlit Secrets.
 # The secret stays outside GitHub/source code. A temporary session override is
 # still available for diagnostics, but normal use requires no re-entry.
 def _streamlit_odds_secret():
@@ -1182,8 +1359,8 @@ else:
             st.session_state.pop("odds_key_override",None)
             st.rerun()
 
-st.subheader("⚙️ Model parameters")
-st.caption("The default view analyses Today automatically and shows the 10 most likely winners. Use the fixture window only when you want to narrow or extend the dates.")
+st.subheader("⚙️ Performance tuning")
+st.caption("Default mode analyses Today automatically and shows the 10 strongest win calls. Tune only what you want, then run the engine.")
 pc1,pc2=st.columns(2)
 with pc1:
     min_conf=st.number_input("Minimum confidence (%)",min_value=45,max_value=90,value=62,step=1)
@@ -1193,7 +1370,7 @@ with pc2:
     max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
     topn=st.number_input("Show top predictions",min_value=3,max_value=30,value=10,step=1)
 
-# V19.5 fixture picker: date changes stay local until GO is pressed.
+# V19.8 fixture picker: date changes stay local until GO is pressed.
 # This prevents the expensive football analysis from rerunning while the user
 # is still tapping around the calendar on a phone/tablet.
 _today=date.today()
@@ -1210,23 +1387,23 @@ if "fixture_range_picker" not in st.session_state:
         st.session_state["fixture_end_day"],
     )
 
-st.markdown("### 📅 Fixtures to analyse")
-st.caption("Quick-pick a common window, or choose your own range. The app only refreshes the football analysis when you press a GO button.")
+st.markdown("### 📅 Race window")
+st.caption("Choose a quick window or your own custom range. The engine only refreshes when you deliberately hit RUN.")
 _q1,_q2,_q3=st.columns(3)
 with _q1:
-    if st.button("TODAY — GO",use_container_width=True,key="fixtures_today_go"):
+    if st.button("TODAY // RUN",use_container_width=True,key="fixtures_today_go"):
         st.session_state["fixture_start_day"]=_today
         st.session_state["fixture_end_day"]=_today
         st.session_state["fixture_range_picker"]=(_today,_today)
         st.rerun()
 with _q2:
-    if st.button("SATURDAY — GO",use_container_width=True,key="fixtures_saturday_go"):
+    if st.button("SATURDAY // RUN",use_container_width=True,key="fixtures_saturday_go"):
         st.session_state["fixture_start_day"]=_this_saturday
         st.session_state["fixture_end_day"]=_this_saturday
         st.session_state["fixture_range_picker"]=(_this_saturday,_this_saturday)
         st.rerun()
 with _q3:
-    if st.button("NEXT 7 DAYS — GO",use_container_width=True,key="fixtures_week_go"):
+    if st.button("NEXT 7 DAYS // RUN",use_container_width=True,key="fixtures_week_go"):
         _week_end=_today+timedelta(days=6)
         st.session_state["fixture_start_day"]=_today
         st.session_state["fixture_end_day"]=_week_end
@@ -1241,7 +1418,7 @@ with st.form("fixture_range_form",clear_on_submit=False):
         max_value=_today+timedelta(days=30),
         help="Choose the first and last date, then press GO. Nothing recalculates while you are choosing dates.",
     )
-    _apply_dates=st.form_submit_button("GO — ANALYSE THIS DATE RANGE",use_container_width=True,type="primary")
+    _apply_dates=st.form_submit_button("RUN THIS DATE RANGE",use_container_width=True,type="primary")
 
 if _apply_dates:
     if isinstance(_range,(tuple,list)) and len(_range)>=2:
@@ -1262,16 +1439,16 @@ if start_day==end_day:
 else:
     st.success(f"Active fixtures: {start_day.strftime('%a %d %b')} → {end_day.strftime('%a %d %b %Y')}")
 
-st.markdown("### 🎯 Personalise acca")
-st.caption("Optional — the Top 10 still loads automatically. Enter a stake and target only when you want a tailored 5/6-team acca.")
+st.markdown("### 🎯 Target build bay")
+st.caption("Optional — the Top 10 still loads automatically. Use this bay when you want a tuned 5/6-team acca built around your stake and target.")
 ac1,ac2,ac3=st.columns(3)
 with ac1:
-    acca_stake=st.number_input("Amount to bet (£)",min_value=1.0,max_value=10000.0,value=10.0,step=1.0,format="%.2f",key="acca_stake")
+    acca_stake=st.number_input("Stake (£)",min_value=1.0,max_value=10000.0,value=10.0,step=1.0,format="%.2f",key="acca_stake")
 with ac2:
-    acca_target=st.number_input("Amount to achieve (£)",min_value=2.0,max_value=100000.0,value=500.0,step=10.0,format="%.2f",key="acca_target")
+    acca_target=st.number_input("Target return (£)",min_value=2.0,max_value=100000.0,value=500.0,step=10.0,format="%.2f",key="acca_target")
 with ac3:
-    acca_legs_choice=st.selectbox("Acca size",["Best of 5 or 6","5 teams","6 teams"],index=0,key="acca_legs_choice")
-if st.button("BUILD MOST-PROBABLE ACCA",use_container_width=True,key="build_personal_acca"):
+    acca_legs_choice=st.selectbox("Build size",["Best of 5 or 6","5 teams","6 teams"],index=0,key="acca_legs_choice")
+if st.button("LAUNCH TARGET ACCA",use_container_width=True,key="build_personal_acca"):
     st.session_state["build_personal_acca_requested"]=True
 
 build_acca_requested=bool(st.session_state.get("build_personal_acca_requested",False))
@@ -1381,7 +1558,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V19.5 • CONSOLIDATED BUILD — V18 evidence engine + visible personalised acca + automatic secret-based odds connection.")
+st.info("V19.8 • CONSOLIDATED BUILD — current bettable fixtures only, with LIVE matches clearly flagged.")
 
 if True:
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1389,6 +1566,8 @@ if True:
     quota_remaining=None
     diagnostics=[]
     out=[]; warnings=[]
+    skipped_completed=0
+    skipped_stale=0
     with st.spinner("Loading verified fixtures and training league models..."):
         for lname,meta in selected.items():
             code=meta["of"]
@@ -1435,6 +1614,10 @@ if True:
                 continue
             def av(t,k): return float(np.mean([x[k] for x in hist[t]])) if hist[t] else 0.
             for g,match_day in games:
+                # Never analyse/recommend a fixture that the results feed already marks complete.
+                if score_ft(g) is not None:
+                    skipped_completed += 1
+                    continue
                 h=team_name(g.get("team1","")).strip(); a=team_name(g.get("team2","")).strip()
                 if not h or not a: continue
                 vals={"h_pts":av(h,"pts"),"a_pts":av(a,"pts"),
@@ -1464,6 +1647,17 @@ if True:
                 # This is also used as a final event-identity check before a green BET is allowed.
                 kickoff_iso=(market.get("event",{}).get("commence_time") if market else None) or matched_kickoff_from_diag(matchdiag)
                 kickoff_dt,kickoff_label=kickoff_uk_from_iso(kickoff_iso)
+                timing=_kickoff_state(kickoff_iso)
+                if timing["state"]=="STALE":
+                    # Silently discard old/non-actionable fixtures. They must never
+                    # appear anywhere in the user-facing app.
+                    skipped_stale += 1
+                    continue
+                # V19.8 is action-only: if we cannot verify a current market, do not
+                # surface the fixture anywhere. This also prevents dead/closed events
+                # from lingering as prediction-only rows.
+                if not market or matchdiag.get("stage")!="accepted":
+                    continue
                 if not kickoff_label:
                     kickoff_label=f"{match_day.strftime('%a %d %b')} • time unavailable"
                 odd=np.nan; best_odd=np.nan; mprob=np.nan; edge=np.nan; ev=np.nan; books=0
@@ -1509,6 +1703,10 @@ if True:
                 else:
                     decision="BET"
                     decision_reason="AUTO VERIFIED — unique fixture, named 1X2 market, kickoff, confidence, edge, positive EV, bookmaker depth and market integrity all passed."
+                if timing["state"]=="LIVE":
+                    decision_reason=("LIVE / TIME-SENSITIVE — "+decision_reason+" The displayed price is the current odds snapshot, "
+                                     "but the model evidence is pre-match and the current score is not ingested. Check the live score and price immediately before placing anything.")
+                    secondary_checks.append(timing["label"])
                 out.append({"League":lname,"Match":f"{h} v {a}","Match date":match_day.isoformat(),"Home team":h,"Away team":a,"Pick":labels[i],
                             "Home %":round(pr[0]*100,1),"Draw %":round(pr[1]*100,1),
                             "Away %":round(pr[2]*100,1),"Confidence %":round(conf*100,1),
@@ -1523,19 +1721,29 @@ if True:
                             "Bookmaker detail":market.get("detail",[]) if market else [],
                             "Market diagnostic":matchdiag,
                             "Kickoff ISO":kickoff_iso,"Kickoff UK":kickoff_label,
+                            "Game state":timing["state"],"Timing label":timing["label"],"Minutes since kickoff":timing["minutes"] if timing["state"]=="LIVE" else None,
                             "Decision":decision,"Decision reason":decision_reason,"Training matches":ntrain,
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence,"Secondary checks":secondary_checks,"Context":context})
     if warnings:
         with st.expander("Data/model warnings"):
             for w in warnings: st.warning(w)
+    # Completed, stale, closed-market and otherwise non-actionable fixtures are
+    # intentionally removed silently. The user only sees matches they can act on.
     if not out:
-        st.info("No supported OpenFootball fixtures were found in that fixture window.")
+        st.info("No currently bettable supported fixtures are available in the selected window.")
         st.stop()
     d=pd.DataFrame(out).sort_values("Confidence %",ascending=False)
     d["V18 audit"]=[score_selection(r) for r in d.to_dict("records")]
     d["Selection score"]=[audit["score"] for audit in d["V18 audit"]]
     d["Tier"]=[audit["tier"] for audit in d["V18 audit"]]
+    d["Ranking %"]=pd.to_numeric(d["Confidence %"],errors="coerce")
+    _live_mask=d["Game state"].eq("LIVE") & pd.to_numeric(d["Market fair %"],errors="coerce").notna()
+    d.loc[_live_mask,"Ranking %"]=pd.to_numeric(d.loc[_live_mask,"Market fair %"],errors="coerce")
+    if d["Game state"].eq("LIVE").any():
+        live_names=d.loc[d["Game state"].eq("LIVE"),["Match","Timing label"]].head(5)
+        live_text=" • ".join(f'{r["Match"]}: {r["Timing label"]}' for _,r in live_names.iterrows())
+        st.warning("🔴 LIVE MATCHES INCLUDED — "+live_text+". Live odds can move or suspend immediately. For live rows, ranking uses current market fair probability when available; the deeper model evidence remains pre-match and does not know the current score.")
     _record_live_bets(d)
 
     # V17 CLEAN PICKS DASHBOARD — answer first, detail on demand.
@@ -1678,10 +1886,14 @@ if True:
         part["_goal_price"]=pd.to_numeric(part["Best market odds"],errors="coerce")
         return {"legs":part,"total_odds":float(result["combined_odds"]),"joint_prob":float(result["joint_probability"])/100.0,"return":float(stake)*float(result["combined_odds"]),"target_odds":target_odds,"status":"TARGET REACHED" if result["status"]=="READY" else "TARGET NOT REACHABLE"},None
 
+    # Actionable frame only: upcoming or recently started LIVE fixtures with a
+    # verified current market. Everything else has already been silently removed.
+    _bettable_now=d[d["Game state"].isin(["UPCOMING","LIVE"])].copy()
+
     if build_acca_requested:
         st.markdown("### 🧠 Most-probable personalised acca")
-        st.caption("The optimiser searches verified 5/6-team combinations and chooses the one with the highest modelled joint win probability that can reach your target.")
-        _acca,_acca_err=_build_goal_acca(d,acca_legs_choice,float(acca_stake),float(acca_target))
+        st.caption("The optimiser searches verified 5/6-team combinations and chooses the highest-probability route to your target. Recently started matches may be included only while a current verified market is still available, and are marked LIVE.")
+        _acca,_acca_err=_build_goal_acca(_bettable_now,acca_legs_choice,float(acca_stake),float(acca_target))
         if _acca_err:
             st.warning(_acca_err["reason"])
         else:
@@ -1695,12 +1907,14 @@ if True:
                 st.success(f'Highest-probability {actual_legs}-team combination found that reaches the target: estimated return £{_acca["return"]:,.2f}.')
             else:
                 st.warning(f'The requested £{acca_target:,.2f} return cannot be reached with the selected 5/6-team setting using currently verified prices. Closest available {actual_legs}-team combination returns about £{_acca["return"]:,.2f}.')
-            _show=_acca["legs"][["Match date","League","Match","Pick","Confidence %","_goal_price"]].copy()
+            _show=_acca["legs"][["Match date","League","Match","Pick","Confidence %","Market fair %","Game state","Timing label","_goal_price"]].copy()
             _show["Selection"]=_acca["legs"].apply(_team_for_pick,axis=1)
             _show["Odds"]=_acca["legs"]["_goal_price"].apply(decimal_to_fractional)
-            _show=_show[["Match date","League","Selection","Match","Pick","Confidence %","Odds"]]
+            _show["Probability used %"]=np.where(_show["Game state"].eq("LIVE") & pd.to_numeric(_show["Market fair %"],errors="coerce").notna(),pd.to_numeric(_show["Market fair %"],errors="coerce"),pd.to_numeric(_show["Confidence %"],errors="coerce"))
+            _show["Status"]=np.where(_show["Game state"].eq("LIVE"),"🔴 "+_show["Timing label"].astype(str),"Upcoming")
+            _show=_show[["Match date","League","Selection","Match","Probability used %","Odds","Status"]]
             st.dataframe(_show,hide_index=True,use_container_width=True)
-            st.caption("Joint chance multiplies the model probabilities as an independence approximation; it is a ranking aid, not a guaranteed success probability.")
+            st.caption("Joint chance is a ranking aid, not a guarantee. Upcoming legs use the pre-match model probability; LIVE legs use current market fair probability when available because the model does not ingest the live score.")
 
     st.markdown("""
     <style>
@@ -1713,12 +1927,15 @@ if True:
     <div class="v171-head"><h2>Top selections</h2><p>Probability-ranked picks for the selected fixture window. Tap a match only when you want the full analysis.</p></div>
     """,unsafe_allow_html=True)
 
-    likely=d[d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(int(topn))
-    value=d[d["Decision"].eq("BET")].copy()
+    # Recommendations include UPCOMING plus clearly marked recent LIVE games.
+    # Live rows use current market fair probability for ordering when available.
+    _active=_bettable_now.copy()
+    likely=_active[_active["Pick"].isin(["HOME","AWAY"])].sort_values("Ranking %",ascending=False).head(int(topn))
+    value=_active[_active["Decision"].eq("BET")].copy()
     if not value.empty:
         value["_vscore"]=pd.to_numeric(value["Edge pp"],errors="coerce").fillna(0)+0.15*pd.to_numeric(value["EV %"],errors="coerce").fillna(0)
         value=value.sort_values(["_vscore","Confidence %"],ascending=False).head(5)
-    both=d[(d["Decision"].eq("BET")) & (d["Confidence %"].ge(68.0)) & d["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
+    both=_active[(_active["Decision"].eq("BET")) & (_active["Confidence %"].ge(68.0)) & _active["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
 
     def _render_clean_rows(frame,lens):
         if frame.empty:
@@ -1727,17 +1944,22 @@ if True:
         for pos,(_,r) in enumerate(frame.iterrows(),1):
             team=_team_for_pick(r); conf=_num(r,"Confidence %",0); price=_price_for(r); ctx=_context_signal_v171(r); market=_market_signal(r); val=_validation_word(r)
             audit=r.get("V18 audit") if isinstance(r.get("V18 audit"),dict) else score_selection(r)
+            game_state=str(r.get("Game state","")); is_live=game_state=="LIVE"
+            display_prob=_num(r,"Ranking %",conf); prob_label="live market fair" if is_live and pd.notna(r.get("Market fair %")) else "model chance"
+            live_badge=('<span class="v171-badge v171-hot">🔴 '+html.escape(str(r.get("Timing label","LIVE")))+'</span>') if is_live else ''
             odds_badge='<span class="v171-badge">Odds '+html.escape(price)+'</span>' if price!="—" else '<span class="v171-badge">Odds not verified</span>'
             main_badge='<span class="v171-badge v171-good">VALUE</span>' if r.get("Decision")=="BET" else '<span class="v171-badge">WIN PICK</span>'
             if lens=="both": main_badge='<span class="v171-badge v171-hot">WIN + VALUE</span>'
             tier_class='v171-good' if audit["tier"]=="ELITE" else 'v171-hot' if audit["tier"]=="STRONG" else ''
-            main_badge=f'<span class="v171-badge {tier_class}">{html.escape(audit["tier"])}</span><span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'+main_badge
-            card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Pick"]))+' • '+html.escape(str(r.get("League","")))+'</div></div><div class="v171-prob">'+f'{conf:.0f}'+'%<small>model chance</small></div></div><div class="v171-badges">'+main_badge+odds_badge+'<span class="v171-badge">Model '+html.escape(val)+'</span><span class="v171-badge">Market '+market+'</span><span class="v171-badge">Context '+ctx+'</span></div><div class="v171-reason">'+html.escape(_clean_reason(r,lens))+'</div></div>')
+            main_badge=live_badge+f'<span class="v171-badge {tier_class}">{html.escape(audit["tier"])}</span><span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'+main_badge
+            reason=_clean_reason(r,lens)
+            if is_live: reason="TIME-SENSITIVE: match already started. Check the live score and current price immediately. "+reason
+            card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Pick"]))+' • '+html.escape(str(r.get("League","")))+'</div></div><div class="v171-prob">'+f'{display_prob:.0f}'+'%<small>'+html.escape(prob_label)+'</small></div></div><div class="v171-badges">'+main_badge+odds_badge+'<span class="v171-badge">Model '+html.escape(val)+'</span><span class="v171-badge">Market '+market+'</span><span class="v171-badge">Context '+ctx+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
             st.markdown(card,unsafe_allow_html=True)
             with st.expander("See full analysis",expanded=False): _detail_panel(r)
 
     st.markdown('<div class="v171-lens">🏆 Most likely winners</div>',unsafe_allow_html=True)
-    st.caption(f"Top {int(topn)} highest model win probabilities. Price does not decide this ranking."); _render_clean_rows(likely,"likely")
+    st.caption(f"Top {int(topn)} win probabilities. Upcoming matches use the model; LIVE matches use current market fair probability when available and are clearly time-stamped."); _render_clean_rows(likely,"likely")
     st.markdown('<div class="v171-lens">💰 Best value bets</div>',unsafe_allow_html=True)
     st.caption("Only selections that pass the existing bookmaker, edge, EV and verification rules."); _render_clean_rows(value,"value")
     st.markdown('<div class="v171-lens">🔥 Win chance + value</div>',unsafe_allow_html=True)
@@ -1746,14 +1968,11 @@ if True:
     with st.expander(f"All other matches ({len(d)})",expanded=False):
         for _,r in d.sort_values("Confidence %",ascending=False).iterrows():
             team=_team_for_pick(r)
-            with st.expander(f'{team} • {r["Pick"]} • {r["Confidence %"]:.0f}% • {r["Decision"]}',expanded=False): _detail_panel(r)
-    if odds_key:
-        with st.expander("Technical / data diagnostics",expanded=False):
-            if diagnostics: st.dataframe(pd.DataFrame(diagnostics),hide_index=True,use_container_width=True)
-            else: st.info("No odds diagnostics were produced.")
+            _state_prefix="🔴 LIVE • " if str(r.get("Game state",""))=="LIVE" else ""
+            with st.expander(f'{_state_prefix}{team} • {r["Pick"]} • {r["Confidence %"]:.0f}% • {r["Decision"]}',expanded=False): _detail_panel(r)
     with st.expander("📈 Model performance & validation",expanded=False): _tracker_panel()
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not odds_key: st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V19.5 rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V19.8 shows only fixtures with a current verified market. Recently started matches can remain while the market is still available and are clearly labelled LIVE and time-sensitive.")
 
