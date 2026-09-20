@@ -1,66 +1,83 @@
-# Craig's Football Predictor V25 — Analyst Engine
+# Craig's Football Predictor V26 — Expanded Universe
 
-V25 is built around the reasoning process used to construct a five-team football
-acca instead of treating a single machine-learning probability as the whole answer.
+V26 removes the biggest structural limitation in V25: the app no longer sees only
+the small hard-coded fixture set.
 
-## Outputs
+## Fixture discovery
 
-**Top 10 strongest teams** stays probability-first across every unfinished fixture
-in the selected date range.
+When `API_FOOTBALL_KEY` is connected and **ALL ANALYSABLE FIXTURES** is selected,
+API-Football becomes the broader discovery layer for the selected date range.
 
-**Five-Team Anchors** is the second-stage analytical shortlist. It challenges the
-probability with:
-- recent and home/away form
+Default **UK + Major Europe** coverage includes:
+- Premier League, Championship, League One, League Two
+- National League
+- FA Cup
+- EFL Cup / League Cup
+- **EFL Trophy**
+- Scottish professional leagues/cups
+- UEFA Champions League
+- UEFA Europa League
+- UEFA Conference League
+- selected major/second-tier leagues and cups across Germany, Spain, Italy,
+  France, Netherlands, Portugal, Belgium, Turkey, Greece, Austria, Switzerland,
+  Denmark, Norway and Sweden
+
+Youth/reserve competitions and friendlies are excluded by default. U21 teams are
+still allowed when they participate in the senior EFL Trophy.
+
+## Probability-source hierarchy
+
+1. Dedicated in-house OpenFootball model where a supported league model exists.
+2. API-Football prediction for expanded competitions.
+3. API-Football de-margined 1X2 market as a clearly labelled fallback when a
+   provider prediction is unavailable.
+4. If neither source exists, the fixture is discovered but not promoted into the
+   probability ranking. Nothing is invented.
+
+Provider-only selections show their source explicitly.
+
+## Dedicated model set
+
+V26 expands the in-house set to:
+- Premier League
+- Championship
+- League One
+- League Two
+- Bundesliga
+- 2. Bundesliga
+- 3. Liga
+- La Liga
+- La Liga 2
+- Serie A
+- Serie B
+- Ligue 1
+- Ligue 2
+
+The Odds API sport keys used for these competitions are current documented keys.
+
+## Quota protection
+
+Expanded discovery uses one date-range fixture request when supported and is limited to a 14-day window. Competition-season coverage is checked before prediction/odds calls. Provider prediction calls are capped at 24 per run and total provider market calls at 12.
+High-priority UK competitions, especially the EFL Trophy, are processed first.
+
+The full verified analyst pass remains separate/on-demand because injury,
+player-importance, lineup and xG analysis can use additional requests.
+
+## Five-Team Anchors
+
+The V25 analyst architecture remains:
+- model probability
+- recent/venue form
 - opponent-adjusted performance
-- scoring/conceding profile
-- provider xG when genuinely available
-- injuries and suspensions
-- importance of the missing player
-- confirmed starting XI / bench
-- important normal starters omitted or rotated
-- all-competition rest and congestion
-- API-Football's independent forecast
-- bookmaker market agreement/disagreement
+- scoring/xG
+- injuries/suspensions weighted by player importance
+- confirmed-XI rotation/omissions
+- all-competition rest/congestion
+- market agreement
 - draw threat
-- an explicit adversarial "what could make this lose?" check
+- adversarial failure check
 
-`Anchor score` is not presented as a win probability. The model's calibrated win
-probability remains visible separately.
-
-## Availability logic
-
-V25 does not count injuries equally.
-
-For unavailable players with usable provider statistics, current-season importance
-is estimated from minutes share, starts, rating, and position-adjusted goal/assist
-contribution. Players are labelled KEY / IMPORTANT / ROTATION / DEPTH.
-
-The two teams' burdens are compared. This allows several important absences for
-one team to outweigh one key absence for the other team.
-
-If confirmed lineups are available:
-- a player reported injured but actually starting is removed from the injury burden
-- V25 builds a current core-player list
-- important normal starters who are benched or omitted are identified even when
-  the reason is rotation rather than injury
-- bench omissions receive a smaller analyst penalty than a complete matchday-XI omission
-
-If API-Football reports that player-stat coverage is not available, V25 fails
-closed rather than inventing a player-importance score.
-
-## Verified analyst pass
-
-Use **RUN FULL VERIFIED ANALYST PASS** to enrich the ten strongest current cases.
-The final five then receive a second pass so injury-driven reordering cannot leave
-a newly promoted anchor without the confirmed-XI/core-player check. Provider xG
-is also attempted for final anchors when the competition actually exposes it.
-
-Provider results are cached in the running Streamlit process.
-
-## Speed
-
-Normal rankings still use the fast three-season model. Full historical
-TRAIN -> TUNE -> untouched FINAL TEST validation remains separate and on-demand.
+Anchor Score is not presented as a calibrated win probability.
 
 ## Secrets
 
@@ -69,17 +86,15 @@ ODDS_API_KEY = "..."
 API_FOOTBALL_KEY = "..."
 ```
 
-## Stress testing
-
-The included `V25_STRESS_TEST_REPORT.md` documents the final automated tests.
-The final build passed 33/33 structural and synthetic decision checks plus Python
-compilation.
-
-Known deliberate limitations:
-- player importance is a transparent current-season heuristic, not a learned
-  historical player plus/minus coefficient
-- process-level caches reset on a full Streamlit container restart
-- accumulator joint probability is an independence approximation
-- API-Football coverage, lineups and xG vary by league and fixture
-
 No football model can guarantee an outcome.
+
+
+## Duplicate protection and evidence quality
+
+Dedicated-model fixtures take priority over provider-discovered duplicates. V26
+uses date + team-name matching rather than only exact strings, reducing duplicate
+rows caused by suffixes such as FC/AFC.
+
+Expanded provider rows with little corroborating evidence receive an Analyst
+Evidence Quality penalty. A high provider probability on its own therefore does
+not automatically jump above a well-supported dedicated-model anchor.

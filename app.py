@@ -229,7 +229,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest model-estimated joint probability among combinations reaching the target. The multiplication assumes match independence; V23 separately audits Safest-Five historical hit rates." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V25 Analyst Engine", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V26 Expanded Universe", page_icon="📈", layout="wide")
 
 
 
@@ -353,7 +353,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V25 ANALYST ENGINE</span>
+ <span class="v14-chip">V26 EXPANDED UNIVERSE</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Nitrous-inspired dashboard styling with evidence-backed football decisions. • Real market comparison</div></div></div>
@@ -390,7 +390,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V25 ANALYST ENGINE</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V26 EXPANDED UNIVERSE</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -445,7 +445,7 @@ hr{border-color:#173247!important}
 
 st.markdown("""
 <style>
-/* --- V25 ANALYST ENGINE EDITION VISUAL LAYER --------------------------------------- */
+/* --- V26 EXPANDED UNIVERSE EDITION VISUAL LAYER --------------------------------------- */
 :root{
   --street-bg:#04070d; --street-panel:#0a1119; --street-panel2:#101924;
   --street-line:#243446; --street-text:#f4f8ff; --street-muted:#9db0c2;
@@ -575,7 +575,7 @@ div[data-testid="stMetricValue"]{color:#fff!important}
 }
 </style>
 <div style="margin:-2px 0 12px; padding:10px 14px; border-radius:16px; border:1px solid rgba(255,138,29,.22); background:linear-gradient(90deg, rgba(255,138,29,.08), rgba(43,231,255,.06)); color:#c8d7e7; font-size:.88rem;">
-  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V25 analyst ranking + on-demand verified pass: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
+  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V26 expanded fixture universe + analyst ranking: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
 </div>
 """, unsafe_allow_html=True)
 
@@ -583,22 +583,36 @@ RAW="https://raw.githubusercontent.com/openfootball/football.json/master"
 LEAGUES={
     "Premier League":{"of":"en.1","odds":"soccer_epl"},
     "Championship":{"of":"en.2","odds":"soccer_efl_champ"},
+    "League One":{"of":"en.3","odds":"soccer_england_league1"},
+    "League Two":{"of":"en.4","odds":"soccer_england_league2"},
     "Bundesliga":{"of":"de.1","odds":"soccer_germany_bundesliga"},
+    "2. Bundesliga":{"of":"de.2","odds":"soccer_germany_bundesliga2"},
+    "3. Liga":{"of":"de.3","odds":"soccer_germany_liga3"},
     "La Liga":{"of":"es.1","odds":"soccer_spain_la_liga"},
+    "La Liga 2":{"of":"es.2","odds":"soccer_spain_segunda_division"},
     "Serie A":{"of":"it.1","odds":"soccer_italy_serie_a"},
+    "Serie B":{"of":"it.2","odds":"soccer_italy_serie_b"},
     "Ligue 1":{"of":"fr.1","odds":"soccer_france_ligue_one"},
+    "Ligue 2":{"of":"fr.2","odds":"soccer_france_ligue_two"},
 }
 
 # V15 league-aware promotion policy. These choices are based on the V14
 # chronological unseen-data calibration tests at the 62% audit threshold.
 # No league is allowed to inherit another league's calibration result.
 V15_POLICY={
-    "Premier League":{"engine":"calibrated","status":"APPROVED","evidence":"V14 gap +6.1pp → +2.1pp"},
-    "Championship":{"engine":"raw","status":"RAW FALLBACK","evidence":"V14 calibrated validation unavailable"},
-    "Bundesliga":{"engine":"calibrated","status":"APPROVED","evidence":"V14 gap +3.4pp → -1.5pp"},
-    "La Liga":{"engine":"raw","status":"APPROVED RAW","evidence":"Raw gap -0.7pp; calibration worsened to -11.7pp"},
-    "Serie A":{"engine":"raw","status":"APPROVED RAW","evidence":"Calibration improvement too small for 56% fewer selections"},
-    "Ligue 1":{"engine":"raw","status":"APPROVED RAW","evidence":"Raw gap -2.1pp; calibration worsened to -9.9pp"},
+    "Premier League":{"engine":"calibrated","status":"APPROVED","evidence":"Legacy V14 gap +6.1pp → +2.1pp"},
+    "Championship":{"engine":"raw","status":"RAW FALLBACK","evidence":"Legacy calibrated validation unavailable"},
+    "League One":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
+    "League Two":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
+    "Bundesliga":{"engine":"calibrated","status":"APPROVED","evidence":"Legacy V14 gap +3.4pp → -1.5pp"},
+    "2. Bundesliga":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
+    "3. Liga":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
+    "La Liga":{"engine":"raw","status":"APPROVED RAW","evidence":"Legacy raw model retained"},
+    "La Liga 2":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
+    "Serie A":{"engine":"raw","status":"APPROVED RAW","evidence":"Legacy raw model retained"},
+    "Serie B":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
+    "Ligue 1":{"engine":"raw","status":"APPROVED RAW","evidence":"Legacy raw model retained"},
+    "Ligue 2":{"engine":"raw","status":"V26 NEW","evidence":"Dedicated V26 model; run Deep Validation for league-specific promotion evidence"},
 }
 # Only leagues actually present in OpenFootball's 2026/27 JSON repository are exposed.
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
@@ -612,7 +626,7 @@ FEATURES=[
     "h_games14","a_games14",
 ]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV25/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV26/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -1214,8 +1228,11 @@ def fixtures_for(code):
 # operational without it and never fabricates xG, injuries or line-ups.
 API_FOOTBALL_BASE="https://v3.football.api-sports.io"
 API_FOOTBALL_LEAGUES={
-    "Premier League":39,"Championship":40,"Bundesliga":78,
-    "La Liga":140,"Serie A":135,"Ligue 1":61,
+    "Premier League":39,"Championship":40,"League One":41,"League Two":42,
+    "Bundesliga":78,"2. Bundesliga":79,"3. Liga":80,
+    "La Liga":140,"La Liga 2":141,
+    "Serie A":135,"Serie B":136,
+    "Ligue 1":61,"Ligue 2":62,
 }
 
 def _streamlit_api_football_secret():
@@ -1244,23 +1261,27 @@ def _api_football_get(path, params, api_key):
     return payload.get("response",[]) if isinstance(payload,dict) else []
 
 @st.cache_data(ttl=86400,show_spinner=False)
-def api_football_coverage(lname, api_key):
+def api_football_coverage(lname, api_key, league_id=None, season_year=None):
     """Read provider coverage before trusting empty injury/lineup/stat feeds."""
-    if not api_key or lname not in API_FOOTBALL_LEAGUES:
+    if not api_key:
         return {"available":False}
-    lid=API_FOOTBALL_LEAGUES[lname]
-    resp=_api_football_get("leagues",{"id":int(lid),"season":2026},api_key)
+    lid=league_id if league_id is not None else API_FOOTBALL_LEAGUES.get(lname)
+    season_year=int(season_year or 2026)
+    if not lid:
+        return {"available":False}
+    resp=_api_football_get("leagues",{"id":int(lid),"season":season_year},api_key)
     if not resp:
         return {"available":False}
     item=resp[0] if isinstance(resp[0],dict) else {}
     seasons=item.get("seasons") or []
-    season=next((x for x in seasons if int(x.get("year",0) or 0)==2026), seasons[-1] if seasons else {})
+    season=next((x for x in seasons if int(x.get("year",0) or 0)==season_year), seasons[-1] if seasons else {})
     cov=season.get("coverage") or {}
     fx=cov.get("fixtures") or {}
     return {
         "available":True,
         "injuries":bool(cov.get("injuries")),
         "predictions":bool(cov.get("predictions")),
+        "odds":bool(cov.get("odds")),
         "players":bool(cov.get("players")),
         "lineups":bool(fx.get("lineups")),
         "fixture_statistics":bool(fx.get("statistics_fixtures")),
@@ -1281,18 +1302,21 @@ def _extract_stat(stats, name):
     return None
 
 @st.cache_data(ttl=1800,show_spinner=False)
-def api_football_fixture_context(lname, match_day, home, away, api_key):
+def api_football_fixture_context(lname, match_day, home, away, api_key, league_id=None, season_year=None):
     """Best-effort true provider context for ONE upcoming fixture.
 
     Returns only values actually supplied by API-Football. It is intentionally
     conservative: if fixture identity is ambiguous, no enrichment is applied.
     """
-    if not api_key or lname not in API_FOOTBALL_LEAGUES:
+    if not api_key:
         return {"available":False,"reason":"API_FOOTBALL_KEY not connected"}
-    league_id=API_FOOTBALL_LEAGUES[lname]
-    coverage=api_football_coverage(lname,api_key)
+    league_id=league_id if league_id is not None else API_FOOTBALL_LEAGUES.get(lname)
+    season_year=int(season_year or 2026)
+    if not league_id:
+        return {"available":False,"reason":"Provider league ID unavailable"}
+    coverage=api_football_coverage(lname,api_key,league_id,season_year)
     date_s=pd.to_datetime(match_day).strftime("%Y-%m-%d")
-    fixtures=_api_football_get("fixtures",{"league":league_id,"season":2026,"date":date_s},api_key)
+    fixtures=_api_football_get("fixtures",{"league":int(league_id),"season":season_year,"date":date_s},api_key)
 
     matches=[]
     for f in fixtures:
@@ -1504,17 +1528,17 @@ def _player_importance_from_response(resp, team_id, league_id, team_played):
             "appearances":int(appearances),"goals":int(g),"assists":int(a),"rating":round(rating,2) if rating else None}
 
 @st.cache_data(ttl=21600,show_spinner=False)
-def api_football_player_importance(player_id, team_id, league_id, team_played, api_key):
+def api_football_player_importance(player_id, team_id, league_id, team_played, api_key, season_year=2026):
     if not api_key or not player_id: return {"available":False}
-    return _player_importance_from_response(_api_football_get("players",{"id":int(player_id),"season":2026},api_key),
+    return _player_importance_from_response(_api_football_get("players",{"id":int(player_id),"season":int(season_year)},api_key),
                                             team_id,league_id,team_played)
 
 @st.cache_data(ttl=21600,show_spinner=False)
-def api_football_team_core_players(team_id, league_id, team_played, api_key):
+def api_football_team_core_players(team_id, league_id, team_played, api_key, season_year=2026):
     if not api_key or not team_id: return []
     out=[]
     for page in (1,2,3):
-        batch=_api_football_get("players",{"team":int(team_id),"season":2026,"page":page},api_key)
+        batch=_api_football_get("players",{"team":int(team_id),"season":int(season_year),"page":page},api_key)
         if not batch: break
         for item in batch:
             imp=_player_importance_from_response([item],team_id,league_id,team_played)
@@ -1543,13 +1567,13 @@ def _confirmed_lineup_rotation_summary(core_players, starters, bench, injury_ids
     burden=min(100.0,sum(float(x.get("weighted_impact",0)) for x in missing)/11.0)
     return {"available":True,"burden":round(burden,1),"missing_core":missing}
 
-def _availability_team_summary(injuries, starter_rows, team_id, league_id, team_played, api_key, player_stats_supported=True):
+def _availability_team_summary(injuries, starter_rows, team_id, league_id, team_played, api_key, player_stats_supported=True, season_year=2026):
     starter_ids={x.get("id") for x in (starter_rows or []) if x.get("id")}; missing=[]; stale=[]; all_known=True
     for rec in injuries or []:
         pid=rec.get("player_id")
         if pid and pid in starter_ids:
             stale.append(rec.get("player")); continue
-        imp=api_football_player_importance(pid,team_id,league_id,team_played,api_key) if (pid and player_stats_supported) else {"available":False}
+        imp=api_football_player_importance(pid,team_id,league_id,team_played,api_key,season_year) if (pid and player_stats_supported) else {"available":False}
         if imp.get("available"):
             missing.append({**rec,**imp,"importance":round(float(imp.get("importance")),1)})
         else:
@@ -1665,7 +1689,16 @@ def _analyst_case(row):
     if base<55: add("Base probability",-3,"Underlying win probability is below 55%; not a naturally strong anchor.",False)
     if str(row.get("Game state","")).upper()=="LIVE": add("Live state",-12,"Match already started; pre-match analyst logic is no longer clean.",False)
 
-    score=float(np.clip(score,0,100)); completeness=round(100*min(evidence,possible)/possible,0)
+    completeness=round(100*min(evidence,possible)/possible,0)
+    engine=str(row.get("Model engine",""))
+    if completeness<35:
+        add("Evidence quality",-8,"Too little corroborating evidence is currently available for anchor-level confidence.",False)
+    elif completeness<50:
+        add("Evidence quality",-4,"The probability has limited independent corroboration; treat it as a lower-confidence anchor.",False)
+    if "market fallback" in engine.casefold():
+        add("Probability source",-4,"This expanded fixture is ranked from bookmaker consensus because a dedicated/provider prediction was unavailable.",False)
+
+    score=float(np.clip(score,0,100))
     severe=sum(float(x.get("delta",0))<=-4 for x in adjustments)
     verdict="ANCHOR" if score>=70 and severe==0 else "STRONG" if score>=63 and severe<=1 else "WATCH" if score>=56 else "CAUTION"
     return {"score":round(score,1),"verdict":verdict,"supports":supports[:6],"risks":risks[:6],
@@ -1718,15 +1751,48 @@ def _external_analysis_registry():
     return {}
 
 def _deep_fixture_analysis(row, api_key, include_xg=False, include_lineup_core=False):
-    lname=str(row.get("League","")); lid=API_FOOTBALL_LEAGUES.get(lname)
-    ext=api_football_fixture_context(lname,row.get("Match date"),row.get("Home team"),row.get("Away team"),api_key)
+    lname=str(row.get("League",""))
+    lid=row.get("Provider league ID") or API_FOOTBALL_LEAGUES.get(lname)
+    season_year=int(row.get("Provider season") or 2026)
+    provider_fixture_id=row.get("Provider fixture ID")
+    if provider_fixture_id and lid:
+        cov=api_football_coverage(lname,api_key,lid,season_year)
+        injuries=_api_football_get("injuries",{"fixture":int(provider_fixture_id)},api_key) if cov.get("injuries") else []
+        lineups=_api_football_get("fixtures/lineups",{"fixture":int(provider_fixture_id)},api_key) if cov.get("lineups") else []
+        home=str(row.get("Home team","")); away=str(row.get("Away team",""))
+        home_id=row.get("Provider home team ID"); away_id=row.get("Provider away team ID")
+        home_inj=[]; away_inj=[]
+        for x in injuries:
+            team=(x.get("team") or {}).get("name",""); pobj=x.get("player") or {}
+            rec={"player":pobj.get("name",""),"player_id":pobj.get("id"),
+                 "reason":pobj.get("reason") or x.get("reason") or "",
+                 "type":x.get("type") or pobj.get("type") or "Unavailable"}
+            if team_match(team,home): home_inj.append(rec)
+            elif team_match(team,away): away_inj.append(rec)
+        confirmed={"home":None,"away":None}; benches={"home":None,"away":None}
+        for lu in lineups:
+            tn=(lu.get("team") or {}).get("name",""); starters=[]; bench=[]
+            for p in lu.get("startXI") or []:
+                po=p.get("player") or {}
+                if po.get("name"): starters.append({"id":po.get("id"),"name":po.get("name"),"pos":po.get("pos")})
+            for p in lu.get("substitutes") or []:
+                po=p.get("player") or {}
+                if po.get("name"): bench.append({"id":po.get("id"),"name":po.get("name"),"pos":po.get("pos")})
+            if team_match(tn,home): confirmed["home"]=starters or None; benches["home"]=bench or None
+            elif team_match(tn,away): confirmed["away"]=starters or None; benches["away"]=bench or None
+        ext={"available":True,"fixture_id":provider_fixture_id,"home_team_id":home_id,"away_team_id":away_id,
+             "injuries":{"home":home_inj,"away":away_inj},"confirmed_lineup":confirmed,"confirmed_bench":benches,
+             "lineups_confirmed":bool(confirmed["home"] and confirmed["away"]),"coverage":cov}
+    else:
+        ext=api_football_fixture_context(lname,row.get("Match date"),row.get("Home team"),row.get("Away team"),api_key,
+                                         league_id=lid,season_year=season_year)
     if not ext.get("available"): return {"available":False,"reason":ext.get("reason","Provider fixture unavailable")}
     ctx=row.get("Context") if isinstance(row.get("Context"),dict) else {}
     hp=((ctx.get("home") or {}).get("played")) or 0; ap=((ctx.get("away") or {}).get("played")) or 0
     lines=ext.get("confirmed_lineup") or {}; inj=ext.get("injuries") or {}; cov=ext.get("coverage") or {}
     if cov.get("injuries"):
-        hav=_availability_team_summary(inj.get("home"),lines.get("home"),ext.get("home_team_id"),lid,hp,api_key,player_stats_supported=bool(cov.get("players")))
-        aav=_availability_team_summary(inj.get("away"),lines.get("away"),ext.get("away_team_id"),lid,ap,api_key,player_stats_supported=bool(cov.get("players")))
+        hav=_availability_team_summary(inj.get("home"),lines.get("home"),ext.get("home_team_id"),lid,hp,api_key,player_stats_supported=True,season_year=season_year)
+        aav=_availability_team_summary(inj.get("away"),lines.get("away"),ext.get("away_team_id"),lid,ap,api_key,player_stats_supported=True,season_year=season_year)
         hav["coverage"]=True; aav["coverage"]=True
     else:
         hav={"burden":None,"missing":[],"coverage":False}
@@ -1739,10 +1805,10 @@ def _deep_fixture_analysis(row, api_key, include_xg=False, include_lineup_core=F
         hx=api_football_recent_xg(ext.get("home_team_id"),row.get("Kickoff ISO") or row.get("Match date"),api_key,3)
         ax=api_football_recent_xg(ext.get("away_team_id"),row.get("Kickoff ISO") or row.get("Match date"),api_key,3)
 
-    if include_lineup_core and ext.get("lineups_confirmed") and cov.get("players"):
+    if include_lineup_core and ext.get("lineups_confirmed"):
         benches=ext.get("confirmed_bench") or {}
-        hcore=api_football_team_core_players(ext.get("home_team_id"),lid,hp,api_key)
-        acore=api_football_team_core_players(ext.get("away_team_id"),lid,ap,api_key)
+        hcore=api_football_team_core_players(ext.get("home_team_id"),lid,hp,api_key,season_year)
+        acore=api_football_team_core_players(ext.get("away_team_id"),lid,ap,api_key,season_year)
         hinj={x.get("player_id") for x in (inj.get("home") or [])}
         ainj={x.get("player_id") for x in (inj.get("away") or [])}
         hrot=_confirmed_lineup_rotation_summary(hcore,lines.get("home"),benches.get("home"),hinj)
@@ -1761,10 +1827,240 @@ def _deep_fixture_analysis(row, api_key, include_xg=False, include_lineup_core=F
 
 ODDS_BASE="https://api.the-odds-api.com/v4/sports"
 
+
+# ---------------------------------------------------------------------
+# V26 EXPANDED FIXTURE UNIVERSE
+# API-Football is the discovery layer; dedicated OpenFootball models remain
+# the preferred probability source where available.
+# ---------------------------------------------------------------------
+PROVIDER_PREDICTION_BUDGET=24
+PROVIDER_MARKET_BUDGET=12
+
+def _competition_text(fx):
+    lg=fx.get("league") or {}
+    return str(lg.get("name","")).strip(),str(lg.get("country","")).strip()
+
+def _is_youth_or_womens_competition(name):
+    n=str(name).casefold()
+    blocked=("women","womens","femin","u17","u18","u19","u20","u21","u23",
+             "premier league 2","professional development","youth","reserve")
+    return any(x in n for x in blocked)
+
+def provider_competition_allowed(fx, universe="UK + Major Europe"):
+    """Filter the global fixture feed to competitions useful for this product."""
+    name,country=_competition_text(fx)
+    n=name.casefold(); c=country.casefold()
+    if not name:
+        return False
+    # Youth sides inside the senior EFL Trophy are valid; youth competitions are not.
+    if _is_youth_or_womens_competition(name) and "efl trophy" not in n:
+        return False
+    if "friendly" in n:
+        return False
+
+    england_terms=(
+        "premier league","championship","league one","league two","national league",
+        "fa cup","league cup","efl cup","efl trophy","community shield"
+    )
+    scotland_terms=("premiership","championship","league one","league two","fa cup","league cup")
+    wales_terms=("cymru premier","welsh cup")
+    ni_terms=("premiership","irish cup","league cup")
+    ireland_terms=("premier division","fai cup")
+    uefa_terms=("uefa champions league","uefa europa league","uefa conference league")
+    major={
+        "germany":("bundesliga","2. bundesliga","3. liga","dfb pokal"),
+        "spain":("la liga","segunda","copa del rey"),
+        "italy":("serie a","serie b","coppa italia"),
+        "france":("ligue 1","ligue 2","coupe de france"),
+        "netherlands":("eredivisie","knvb beker"),
+        "portugal":("primeira liga","taça de portugal","taca de portugal"),
+        "belgium":("jupiler pro league","pro league","cup"),
+        "turkey":("süper lig","super lig","cup"),
+        "greece":("super league","cup"),
+        "austria":("bundesliga","cup"),
+        "switzerland":("super league","cup"),
+        "denmark":("superliga","cup"),
+        "norway":("eliteserien","cup"),
+        "sweden":("allsvenskan","superettan","cup"),
+    }
+
+    if c=="england":
+        return any(x in n for x in england_terms)
+    if c=="scotland":
+        return any(x in n for x in scotland_terms)
+    if c=="wales":
+        return any(x in n for x in wales_terms)
+    if c in ("northern-ireland","northern ireland"):
+        return any(x in n for x in ni_terms)
+    if c=="ireland" and universe!="UK only":
+        return any(x in n for x in ireland_terms)
+    if any(x in n for x in uefa_terms):
+        return True
+    if universe=="UK only":
+        return False
+    if universe=="Core model leagues only":
+        return False
+    terms=major.get(c)
+    return bool(terms and any(x in n for x in terms))
+
+def provider_competition_priority(fx):
+    name,country=_competition_text(fx)
+    n=name.casefold(); c=country.casefold()
+    if "efl trophy" in n: return 100
+    if c=="england" and any(x in n for x in ("fa cup","league cup","efl cup","national league")): return 95
+    if any(x in n for x in ("uefa champions league","uefa europa league","uefa conference league")): return 92
+    if c in ("england","scotland"): return 88
+    if any(x in n for x in ("cup","copa","coppa","pokal","coupe","beker")): return 82
+    return 75
+
+@st.cache_data(ttl=900,show_spinner=False)
+def api_football_fixture_range(start_iso, end_iso, api_key):
+    """One range request when supported; fall back to daily calls if necessary."""
+    if not api_key:
+        return []
+    params={"from":str(start_iso),"to":str(end_iso),"timezone":"Europe/London"}
+    try:
+        return _api_football_get("fixtures",params,api_key)
+    except Exception:
+        start=pd.to_datetime(start_iso).date(); end=pd.to_datetime(end_iso).date()
+        days=(end-start).days+1
+        if days>14:
+            raise RuntimeError("Expanded provider fallback is limited to 14 days when range retrieval is unavailable.")
+        out=[]
+        for k in range(max(days,0)):
+            d=(start+timedelta(days=k)).isoformat()
+            out.extend(_api_football_get("fixtures",{"date":d,"timezone":"Europe/London"},api_key))
+        return out
+
+def _provider_fixture_state(fx):
+    stx=((fx.get("fixture") or {}).get("status") or {})
+    short=str(stx.get("short","")).upper()
+    if short in ("FT","AET","PEN","CANC","ABD","AWD","WO","PST"):
+        return "FINAL" if short in ("FT","AET","PEN") else "UNAVAILABLE"
+    if short in ("NS","TBD"):
+        return "UPCOMING"
+    return "LIVE"
+
+def _provider_fixture_key(fx):
+    teams=fx.get("teams") or {}; h=(teams.get("home") or {}).get("name",""); a=(teams.get("away") or {}).get("name","")
+    dt=pd.to_datetime((fx.get("fixture") or {}).get("date"),errors="coerce")
+    day=dt.date().isoformat() if pd.notna(dt) else ""
+    return (norm(h),norm(a),day)
+
+def _existing_row_key(row):
+    return (norm(row.get("Home team","")),norm(row.get("Away team","")),str(row.get("Match date",""))[:10])
+
+def provider_fixture_duplicates_existing(fx, rows):
+    teams=fx.get("teams") or {}
+    h=(teams.get("home") or {}).get("name",""); a=(teams.get("away") or {}).get("name","")
+    dt=pd.to_datetime((fx.get("fixture") or {}).get("date"),errors="coerce")
+    if pd.isna(dt): return False
+    day=dt.date().isoformat()
+    for r in rows:
+        if str(r.get("Match date",""))[:10]!=day: continue
+        if team_match(h,r.get("Home team","")) and team_match(a,r.get("Away team","")):
+            return True
+    return False
+
+@st.cache_data(ttl=900,show_spinner=False)
+def api_football_fixture_odds(fixture_id, home, away, api_key):
+    """Parse API-Football pre-match 1X2 odds for competitions The Odds API lacks."""
+    if not api_key or not fixture_id:
+        return None
+    resp=_api_football_get("odds",{"fixture":int(fixture_id)},api_key)
+    if not resp:
+        return None
+    root=resp[0] if isinstance(resp[0],dict) else {}
+    books=[]
+    for bk in root.get("bookmakers") or []:
+        chosen=None
+        for bet in bk.get("bets") or []:
+            nm=str(bet.get("name","")).casefold()
+            if nm in ("match winner","1x2","fulltime result","full time result") or ("match" in nm and "winner" in nm):
+                chosen=bet; break
+        if not chosen: continue
+        mapped={"HOME":None,"DRAW":None,"AWAY":None}
+        for v in chosen.get("values") or []:
+            label=str(v.get("value","")).strip()
+            try: odd=float(v.get("odd"))
+            except Exception: continue
+            if not np.isfinite(odd) or odd<=1.01 or odd>100: continue
+            low=label.casefold()
+            if low in ("home","1") or team_match(label,home): mapped["HOME"]=odd
+            elif low in ("draw","x","tie"): mapped["DRAW"]=odd
+            elif low in ("away","2") or team_match(label,away): mapped["AWAY"]=odd
+        if all(mapped.values()):
+            inv=np.array([1/mapped["HOME"],1/mapped["DRAW"],1/mapped["AWAY"]],dtype=float)
+            over=float(inv.sum())
+            if .95<=over<=1.25:
+                fair=inv/over
+                books.append({"bookmaker":bk.get("name","Unknown"),
+                              "odds":[mapped["HOME"],mapped["DRAW"],mapped["AWAY"]],
+                              "fair":fair.tolist()})
+    if not books:
+        return None
+    arr=np.array([x["odds"] for x in books],dtype=float)
+    med=np.median(arr,axis=0); best=np.max(arr,axis=0)
+    inv=1/med; fair=inv/inv.sum()
+    return {"median":med.tolist(),"best":best.tolist(),"fair":fair.tolist(),"books":len(books),
+            "integrity":"OK","detail":books,"source":"API-Football"}
+
+def _provider_prediction_to_row(fx, pred, market=None):
+    fixture=fx.get("fixture") or {}; teams=fx.get("teams") or {}; lg=fx.get("league") or {}
+    home=(teams.get("home") or {}).get("name",""); away=(teams.get("away") or {}).get("name","")
+    hp=_pct_string(pred.get("home")); dp=_pct_string(pred.get("draw")); ap=_pct_string(pred.get("away"))
+    source="API-Football prediction"
+    if None in (hp,dp,ap):
+        if market is None:
+            return None
+        hp,dp,ap=[float(x)*100 for x in market["fair"]]
+        source="API-Football market fallback"
+    probs=np.array([hp,dp,ap],dtype=float)
+    if not np.isfinite(probs).all() or probs.sum()<=0:
+        return None
+    probs=probs/probs.sum()
+    i=0 if probs[0]>=probs[2] else 2
+    conf=float(probs[i])
+    if conf<=0 or not np.isfinite(conf):
+        return None
+    dt=pd.to_datetime(fixture.get("date"),errors="coerce")
+    if pd.isna(dt): return None
+    match_day=dt.date().isoformat()
+    kickoff_iso=str(fixture.get("date") or "")
+    _,kickoff_label=kickoff_uk_from_iso(kickoff_iso)
+    labels=["HOME","DRAW","AWAY"]
+    odd=best_odd=mprob=edge=ev=None; books=None; integrity=None; detail=[]; diag={"stage":"no-events","reason":"Provider prediction available; no verified market loaded yet","trace":[]}
+    if market:
+        odd=float(market["median"][i]); best_odd=float(market["best"][i]); mprob=float(market["fair"][i]); edge=conf-mprob; ev=conf*best_odd-1
+        books=int(market["books"]); integrity=market.get("integrity"); detail=market.get("detail",[])
+        diag={"stage":"accepted","reason":"Verified API-Football 1X2 market","trace":[],"provider":"API-Football"}
+    return {
+        "League":str(lg.get("name") or "Provider competition"),
+        "Competition country":str(lg.get("country") or ""),
+        "Match":f"{home} v {away}","Match date":match_day,"Home team":home,"Away team":away,"Pick":labels[i],
+        "Home %":round(probs[0]*100,1),"Draw %":round(probs[1]*100,1),"Away %":round(probs[2]*100,1),
+        "Confidence %":round(conf*100,1),"Fair odds":round(1/conf,2),
+        "Market odds":round(odd,2) if odd else None,"Market fair %":round(mprob*100,1) if mprob else None,
+        "Edge pp":round(edge*100,1) if edge is not None else None,"EV %":round(ev*100,1) if ev is not None else None,
+        "Bookmakers":books,"Best market odds":round(best_odd,2) if best_odd else None,
+        "Market integrity":integrity,"Bookmaker detail":detail,"Market diagnostic":diag,
+        "Kickoff ISO":kickoff_iso,"Kickoff UK":kickoff_label,"Game state":"UPCOMING",
+        "Timing label":"Upcoming","Minutes since kickoff":None,
+        "Decision":"RANKED" if market else "PREDICTION ONLY",
+        "Decision reason":f"Expanded-universe fixture ranked from {source}. "+("A verified current 1X2 market is attached." if market else "No current 1X2 market has been verified yet."),
+        "Training matches":None,"Model engine":source,"Validation":"PROVIDER FALLBACK",
+        "Validation evidence":"Used because this competition is outside the dedicated OpenFootball model set.",
+        "Secondary checks":[],"Context":{"available":True,"home":{},"away":{},"injuries":"UNAVAILABLE — verified analyst pass not run","provider_source":source},
+        "Provider fixture ID":fixture.get("id"),"Provider league ID":lg.get("id"),"Provider season":lg.get("season"),
+        "Provider home team ID":(teams.get("home") or {}).get("id"),"Provider away team ID":(teams.get("away") or {}).get("id"),
+        "Fixture source":"API-Football expanded universe",
+    }
+
 def norm(s):
     import re, unicodedata
     s=unicodedata.normalize("NFKD",str(s)).encode("ascii","ignore").decode().lower()
-    s=re.sub(r"\b(fc|cf|afc|ac|calcio|club)\b"," ",s)
+    s=s.replace("&"," and ")
+    s=re.sub(r"\b(fc|cf|afc|ac|calcio|club|and)\b"," ",s)
     return re.sub(r"[^a-z0-9]","",s)
 
 # Explicit aliases are safer than increasingly loose fuzzy matching for money data.
@@ -2422,10 +2718,10 @@ with st.expander("⚡ Engine & data connections",expanded=False):
             st.session_state["v24_provider_refresh_requested"]=True
 
 st.markdown("### 🏁 Probability-first mode")
-st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. No positive-EV or +4pp edge gate. V25 uses a three-season fast model for ordinary rankings; the verified analyst pass and full-history validation run only when requested.")
-with st.expander("How V25 builds the five-team anchors",expanded=False):
+st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. No positive-EV or +4pp edge gate. V26 uses dedicated three-season models where available, plus API-Football discovery for extra competitions; the verified analyst pass and full-history validation run only when requested.")
+with st.expander("How V26 builds the five-team anchors",expanded=False):
     st.markdown("""
-V25 keeps model probability separate from analyst confidence. It then tries to disprove each favourite using recent/venue form, opponent-adjusted performance, scoring profile, schedule, market disagreement and draw risk. When API-Football is connected, the verified pass adds comparative injuries/suspensions, player importance, confirmed line-ups, all-competition workload, an independent provider forecast and provider xG where supplied.
+V26 keeps model probability separate from analyst confidence. Dedicated leagues use the in-house model; extra cups/leagues discovered by API-Football use a clearly labelled provider prediction or market fallback. It then tries to disprove each favourite using recent/venue form, opponent-adjusted performance, scoring profile, schedule, market disagreement and draw risk. When API-Football is connected, the verified pass adds comparative injuries/suspensions, player importance, confirmed line-ups, all-competition workload, an independent provider forecast and provider xG where supplied.
 
 **Anchor score is not a win probability.** It is the transparent ranking score for the full analytical case. Five-Team Anchors are the five cases that survive that broader investigation best.
 """)
@@ -2704,12 +3000,13 @@ def _tracker_panel():
             st.dataframe(pd.DataFrame(perf).sort_values("Bets",ascending=False),use_container_width=True,hide_index=True)
     st.download_button("⬇️ EXPORT VALIDATION LEDGER",data=led.to_csv(index=False).encode("utf-8"),file_name="football_predictor_v16_live_ledger.csv",mime="text/csv",use_container_width=True)
 
-scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
+scope=st.selectbox("Competition",["ALL ANALYSABLE FIXTURES"]+list(LEAGUES))
+universe_mode=st.selectbox("Expanded fixture universe",["UK + Major Europe","UK only","Core model leagues only"],index=0,help="API-Football expands fixture discovery beyond the dedicated model leagues. Core-model fixtures still use the in-house model first.")
 
-st.info("V25 • ANALYST ENGINE — richer football features, time-decay training, chronological model competition and probability calibration.")
+st.info("V26 • EXPANDED UNIVERSE — dedicated models plus API-Football fixture discovery for UK cups, EFL Trophy and major European competitions.")
 
 if True:
-    selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
+    selected=LEAGUES if scope=="ALL ANALYSABLE FIXTURES" else {scope:LEAGUES[scope]}
     odds_key=(st.session_state.get("odds_key_override", "").strip() or _streamlit_odds_secret())
     api_football_key=_streamlit_api_football_secret()
     quota_remaining=None
@@ -2883,11 +3180,79 @@ if True:
                             "Model engine":engine_label,"Validation":validation_status,
                             "Validation evidence":validation_evidence,"Secondary checks":secondary_checks,"Context":context})
             _partial_status.caption(f"Found {len(out)} ranked fixture candidate(s) so far.")
+
+    # V26: API-Football becomes the discovery layer for competitions outside the
+    # dedicated OpenFootball model set. Dedicated rows always win duplicate checks.
+    provider_discovered=0; provider_ranked=0; provider_unranked=0; provider_markets=0
+    if scope=="ALL ANALYSABLE FIXTURES" and universe_mode!="Core model leagues only" and api_football_key:
+        try:
+            if (end_day-start_day).days>13:
+                raise RuntimeError("Expanded fixture discovery is limited to a 14-day window to protect API quota and response time.")
+            _load_status.info("Discovering expanded UK / European fixtures…")
+            pfixtures=api_football_fixture_range(start_day.isoformat(),end_day.isoformat(),api_football_key)
+            candidates=[]
+            for fx in pfixtures:
+                if not provider_competition_allowed(fx,universe_mode): continue
+                if _provider_fixture_state(fx)!="UPCOMING": continue
+                if provider_fixture_duplicates_existing(fx,out): continue
+                provider_discovered+=1
+                candidates.append((provider_competition_priority(fx),fx))
+            candidates.sort(key=lambda z:z[0],reverse=True)
+
+            # Prediction and odds calls are quota-bounded. Coverage is checked
+            # before either endpoint is called, as recommended by API-Football.
+            provider_rows=[]; market_calls=0
+            for _,fx in candidates[:PROVIDER_PREDICTION_BUDGET]:
+                fid=(fx.get("fixture") or {}).get("id"); lg=fx.get("league") or {}
+                lid=lg.get("id"); season_year=lg.get("season")
+                cov=api_football_coverage(str(lg.get("name","")),api_football_key,lid,season_year)
+                pred={"available":False}
+                if cov.get("predictions"):
+                    pred=api_football_prediction(fid,api_football_key)
+                row=_provider_prediction_to_row(fx,pred,None)
+                if row is None and cov.get("odds") and market_calls<PROVIDER_MARKET_BUDGET:
+                    teams=fx.get("teams") or {}
+                    h=(teams.get("home") or {}).get("name",""); a=(teams.get("away") or {}).get("name","")
+                    market=api_football_fixture_odds(fid,h,a,api_football_key); market_calls+=1
+                    row=_provider_prediction_to_row(fx,{"available":False},market)
+                if row is not None:
+                    provider_rows.append(row); provider_ranked+=1
+                else:
+                    provider_unranked+=1
+
+            # Spend only the remaining market-call budget on pricing the strongest
+            # expanded selections. Total market calls never exceed the advertised cap.
+            provider_rows.sort(key=lambda r:float(r.get("Confidence %") or 0),reverse=True)
+            for row in provider_rows:
+                if market_calls>=PROVIDER_MARKET_BUDGET: break
+                if row.get("Best market odds"): continue
+                market=api_football_fixture_odds(row.get("Provider fixture ID"),row.get("Home team"),row.get("Away team"),api_football_key)
+                market_calls+=1
+                if not market: continue
+                labels=["HOME","DRAW","AWAY"]; i=labels.index(row["Pick"])
+                conf=float(row["Confidence %"])/100.0; odd=float(market["median"][i]); best=float(market["best"][i]); mf=float(market["fair"][i])
+                row["Market odds"]=round(odd,2); row["Best market odds"]=round(best,2); row["Market fair %"]=round(mf*100,1)
+                row["Edge pp"]=round((conf-mf)*100,1); row["EV %"]=round((conf*best-1)*100,1)
+                row["Bookmakers"]=int(market["books"]); row["Market integrity"]=market.get("integrity"); row["Bookmaker detail"]=market.get("detail",[])
+                row["Market diagnostic"]={"stage":"accepted","reason":"Verified API-Football 1X2 market","trace":[],"provider":"API-Football"}
+                row["Decision"]="RANKED"; row["Decision reason"]="Expanded-universe selection with verified API-Football 1X2 pricing."
+                provider_markets+=1
+
+            out.extend(provider_rows)
+            _partial_status.caption(f"Expanded discovery: {provider_discovered} extra fixture(s) found • {provider_ranked} rankable • {provider_markets} with verified provider prices.")
+        except Exception as e:
+            warnings.append(f"Expanded API-Football discovery unavailable ({e})")
+
     _load_status.empty()
     _partial_status.empty()
 
     if st.session_state.get("v24_deep_requested",False):
         st.session_state["v24_deep_requested"]=False
+
+    if api_football_key and scope=="ALL ANALYSABLE FIXTURES" and universe_mode!="Core model leagues only":
+        st.caption(f"Expanded universe: {provider_discovered} additional fixture(s) discovered • {provider_ranked} rankable • {provider_markets} with provider prices. Prediction budget {PROVIDER_PREDICTION_BUDGET}; price budget {PROVIDER_MARKET_BUDGET}.")
+    elif scope=="ALL ANALYSABLE FIXTURES" and universe_mode!="Core model leagues only":
+        st.info("Expanded fixture discovery is ready, but API_FOOTBALL_KEY is not connected. The app is currently showing the dedicated model leagues only.")
 
     if warnings:
         with st.expander("Data/model warnings"):
@@ -2914,7 +3279,7 @@ if True:
     d["Ranking %"]=pd.to_numeric(d["Confidence %"],errors="coerce")
 
     if engine_diagnostics:
-        with st.expander("🧪 V25 engine stress test — chronological unseen matches",expanded=False):
+        with st.expander("🧪 V26 engine stress test — chronological unseen matches",expanded=False):
             st.caption("Fast mode returns predictions immediately. When you run Deep Validation, the selected leagues use TRAIN → TUNE/CALIBRATE → untouched FINAL TEST and cache the approved result for the rest of the session.")
             _eng=pd.DataFrame(engine_diagnostics)
             _cols=["League","Engine","Training matches","Train matches","Tune matches","Final test matches","Legacy log loss","V25 log loss","Accuracy %","Avg confidence %","Calibration gap pp","Recency half-life days","Time-decay half-life days","Temperature","Promoted"]
@@ -3089,8 +3454,10 @@ if True:
         if audit.get("concerns"): st.warning("Concerns: "+" • ".join(audit["concerns"]))
         if audit.get("penalties"): st.caption("Risk penalties: "+" • ".join(f'-{p["points"]} {p["reason"]}' for p in audit["penalties"]))
         st.caption(r.get("Decision reason", ""))
+        if r.get("Fixture source"):
+            st.caption(f'Data source: {r.get("Fixture source")} • Probability engine: {r.get("Model engine")}')
         case=r.get("Analyst case") if isinstance(r.get("Analyst case"),dict) else _analyst_case(r)
-        st.markdown("**V25 analyst case**")
+        st.markdown("**V26 analyst case**")
         x1,x2,x3=st.columns(3)
         x1.metric("Anchor score",f'{case["score"]:.0f}/100'); x2.metric("Verdict",case["verdict"]); x3.metric("Evidence coverage",f'{case["evidence_completeness"]:.0f}%')
         if case.get("supports"): st.success("Supports: "+" • ".join(case["supports"][:5]))
@@ -3110,7 +3477,7 @@ if True:
                     _rot.append(f'{_lab}: {_p.get("player","?")} {_p.get("lineup_status","")}')
             if _rot: st.caption("Confirmed-XI changes: "+" • ".join(_rot))
 
-    # V25 ANALYST ENGINE DASHBOARD — one clear question: who is most likely to win?
+    # V26 EXPANDED UNIVERSE DASHBOARD — one clear question: who is most likely to win?
     def _context_signal_v171(r):
         ctx=r.get("Context")
         if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
@@ -3173,7 +3540,7 @@ if True:
 
     if build_acca_requested:
         st.markdown("### 🧠 Most-probable personalised acca")
-        st.caption("The optimiser starts from the V25 analyst-ranked pool. A verified current price is required only to calculate the return; positive EV and +4pp edge are not selection gates.")
+        st.caption("The optimiser starts from the V26 analyst-ranked pool. A verified current price is required only to calculate the return; positive EV and +4pp edge are not selection gates.")
         _acca,_acca_err=_build_goal_acca(_bettable_now,acca_legs_choice,float(acca_stake),float(acca_target))
         if _acca_err:
             st.warning(_acca_err["reason"])
@@ -3275,8 +3642,8 @@ with st.expander("🔌 Advanced data providers",expanded=False):
     st.write("**API-Football enrichment:** "+("✅ Connected" if _af else "⚪ Not connected"))
     st.caption("API-Football is on-demand. RUN FULL VERIFIED ANALYST PASS adds match-specific injuries/suspensions, player-importance estimates, confirmed line-ups, all-competition workload, an independent provider forecast and provider xG where supplied. Missing data is never invented.")
     st.write("**The Odds API:** "+("✅ Connected" if (_streamlit_odds_secret() or st.session_state.get("odds_key_override")) else "⚪ Not connected"))
-    st.caption("Current prices feed return calculations immediately. Predictive market blending is never assigned a hand-picked weight: V25 learns it from settled ledger history and activates it only after chronological holdout improvement.")
+    st.caption("Current prices feed return calculations immediately. Predictive market blending is never assigned a hand-picked weight: V26 learns it from settled ledger history and activates it only after chronological holdout improvement.")
 
 st.divider()
-st.caption("V25 Analyst Engine: instant probability ranking first, then transparent analyst scoring and Five-Team Anchors. The verified provider pass is optional/on-demand and cached. Finished/stale fixtures stay hidden; no model can guarantee a result.")
+st.caption("V26 Expanded Universe: dedicated models plus API-Football discovery across UK cups/tiers and major Europe, followed by the same transparent analyst scoring and Five-Team Anchors. Provider-only fixtures are labelled as such; no model can guarantee a result.")
 
