@@ -14,9 +14,9 @@ from sklearn.metrics import log_loss
 
 
 
-# --- V18 DECISION / SAFETY ENGINE (embedded in V19.3) ---------------------------
+# --- V18 DECISION / SAFETY ENGINE (embedded in V19.4) ---------------------------
 # Kept inside app.py so Streamlit cannot deploy the UI and selection engine from
-# different commits. This is the V18 scoring/acca logic preserved in V19.3.
+# different commits. This is the V18 scoring/acca logic preserved in V19.4.
 WEIGHTS = {
     "model_probability": 30,
     "goals_profile": 20,
@@ -181,7 +181,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest estimated joint success probability among combinations reaching the target." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V19.3", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V19.4", page_icon="📈", layout="wide")
 
 
 
@@ -305,7 +305,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V19.3</span>
+ <span class="v14-chip">V19.4</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Data. Discipline. Evidence-backed decisions. • Real market comparison</div></div></div>
@@ -342,7 +342,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V19.3</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V19.4</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -1124,7 +1124,7 @@ with st.expander("View league engine policy",expanded=False):
 
 st.subheader("🔐 Live data connection")
 
-# V19.3: load the Odds API key automatically from Streamlit Secrets.
+# V19.4: load the Odds API key automatically from Streamlit Secrets.
 # The secret stays outside GitHub/source code. A temporary session override is
 # still available for diagnostics, but normal use requires no re-entry.
 def _streamlit_odds_secret():
@@ -1212,17 +1212,17 @@ else:
 
 st.caption(f"Analysing fixtures from {start_day.strftime('%a %d %b')} to {end_day.strftime('%a %d %b %Y')}.")
 
-with st.expander("🎯 Personalise acca",expanded=False):
-    st.caption("Optional. The normal screen still loads first; use this only when you want the app to build around a stake and target return.")
-    ac1,ac2,ac3=st.columns(3)
-    with ac1:
-        acca_stake=st.number_input("Stake (£)",min_value=1.0,max_value=10000.0,value=10.0,step=1.0,format="%.2f")
-    with ac2:
-        acca_target=st.number_input("Target return (£)",min_value=2.0,max_value=100000.0,value=500.0,step=10.0,format="%.2f")
-    with ac3:
-        acca_legs=st.selectbox("Number of teams",[5,6],index=0)
-    if st.button("BUILD PERSONALISED ACCA",use_container_width=True,key="build_personal_acca"):
-        st.session_state["build_personal_acca_requested"]=True
+st.markdown("### 🎯 Personalise acca")
+st.caption("Optional — the Top 10 still loads automatically. Enter a stake and target only when you want a tailored 5/6-team acca.")
+ac1,ac2,ac3=st.columns(3)
+with ac1:
+    acca_stake=st.number_input("Amount to bet (£)",min_value=1.0,max_value=10000.0,value=10.0,step=1.0,format="%.2f",key="acca_stake")
+with ac2:
+    acca_target=st.number_input("Amount to achieve (£)",min_value=2.0,max_value=100000.0,value=500.0,step=10.0,format="%.2f",key="acca_target")
+with ac3:
+    acca_legs_choice=st.selectbox("Acca size",["Best of 5 or 6","5 teams","6 teams"],index=0,key="acca_legs_choice")
+if st.button("BUILD MOST-PROBABLE ACCA",use_container_width=True,key="build_personal_acca"):
+    st.session_state["build_personal_acca_requested"]=True
 
 build_acca_requested=bool(st.session_state.get("build_personal_acca_requested",False))
 
@@ -1331,7 +1331,7 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V19.3 • CONSOLIDATED BUILD — V18 evidence engine + V19 personalised acca + automatic secret-based odds connection.")
+st.info("V19.4 • CONSOLIDATED BUILD — V18 evidence engine + visible personalised acca + automatic secret-based odds connection.")
 
 if True:
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
@@ -1618,9 +1618,10 @@ if True:
                 pass
         return np.nan
 
-    def _build_goal_acca(frame,legs,stake,target):
+    def _build_goal_acca(frame,legs_choice,stake,target):
         target_odds=float(target)/float(stake) if float(stake)>0 else np.inf
-        result=build_best_chance_acca(frame.to_dict("records"),target_odds=target_odds,leg_counts=(int(legs),),min_books=int(min_books))
+        leg_counts=(5,6) if legs_choice=="Best of 5 or 6" else ((5,) if legs_choice=="5 teams" else (6,))
+        result=build_best_chance_acca(frame.to_dict("records"),target_odds=target_odds,leg_counts=leg_counts,min_books=int(min_books))
         if result["status"]=="INSUFFICIENT":
             return None,{"reason":result["reason"]}
         part=pd.DataFrame(result["legs"]).copy()
@@ -1628,21 +1629,22 @@ if True:
         return {"legs":part,"total_odds":float(result["combined_odds"]),"joint_prob":float(result["joint_probability"])/100.0,"return":float(stake)*float(result["combined_odds"]),"target_odds":target_odds,"status":"TARGET REACHED" if result["status"]=="READY" else "TARGET NOT REACHABLE"},None
 
     if build_acca_requested:
-        st.markdown("### 🎯 Personalised acca")
-        st.caption("Built for the stake and target you entered. It maximises model win probability among combinations that can reach the target, using verified current prices only.")
-        _acca,_acca_err=_build_goal_acca(d,int(acca_legs),float(acca_stake),float(acca_target))
+        st.markdown("### 🧠 Most-probable personalised acca")
+        st.caption("The optimiser searches verified 5/6-team combinations and chooses the one with the highest modelled joint win probability that can reach your target.")
+        _acca,_acca_err=_build_goal_acca(d,acca_legs_choice,float(acca_stake),float(acca_target))
         if _acca_err:
             st.warning(_acca_err["reason"])
         else:
+            actual_legs=len(_acca["legs"])
             m1,m2,m3,m4=st.columns(4)
             m1.metric("Stake",f"£{acca_stake:,.2f}")
             m2.metric("Target",f"£{acca_target:,.2f}")
             m3.metric("Combined odds",decimal_to_fractional(_acca["total_odds"]))
             m4.metric("Model joint chance",f'{_acca["joint_prob"]*100:.1f}%')
             if _acca["status"]=="TARGET REACHED":
-                st.success(f'Highest-probability {int(acca_legs)}-team combination found that reaches the target: estimated return £{_acca["return"]:,.2f}.')
+                st.success(f'Highest-probability {actual_legs}-team combination found that reaches the target: estimated return £{_acca["return"]:,.2f}.')
             else:
-                st.warning(f'The requested £{acca_target:,.2f} return cannot be reached with {int(acca_legs)} currently verified-priced teams in this fixture window. Closest available combination returns about £{_acca["return"]:,.2f}.')
+                st.warning(f'The requested £{acca_target:,.2f} return cannot be reached with the selected 5/6-team setting using currently verified prices. Closest available {actual_legs}-team combination returns about £{_acca["return"]:,.2f}.')
             _show=_acca["legs"][["Match date","League","Match","Pick","Confidence %","_goal_price"]].copy()
             _show["Selection"]=_acca["legs"].apply(_team_for_pick,axis=1)
             _show["Odds"]=_acca["legs"]["_goal_price"].apply(decimal_to_fractional)
@@ -1703,5 +1705,5 @@ if True:
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not odds_key: st.warning("No current-odds key is connected, so value classifications remain disabled.")
 st.divider()
-st.caption("V19.3 rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
+st.caption("V19.4 rule: BET requires matched current UK 1X2 prices, verified fixture/kickoff, bookmaker depth, confidence, minimum edge and positive EV. Live validation records evidence; it does not loosen betting rules.")
 
