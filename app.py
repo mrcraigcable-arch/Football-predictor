@@ -7,23 +7,25 @@ from collections import defaultdict, deque
 from fractions import Fraction
 from itertools import combinations
 from math import isfinite, log
+import math
 from datetime import date, datetime, timezone, timedelta
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import log_loss
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss, accuracy_score
 
 
 
-# --- V18 DECISION / SAFETY ENGINE (embedded, preserved in V21.1) ---------------------------
+# --- V18 DECISION / SAFETY ENGINE (embedded, preserved in V22) ---------------------------
 # Kept inside app.py so Streamlit cannot deploy the UI and selection engine from
-# different commits. This is the V18 scoring/acca logic preserved in V21.1.
+# different commits. This is the V18 scoring/acca logic preserved in V22.
 WEIGHTS = {
-    "model_probability": 30,
+    "model_probability": 35,
     "goals_profile": 20,
-    "recent_venue_form": 15,
-    "market_value": 15,
+    "recent_venue_form": 20,
+    "market_value": 0,
     "availability_evidence": 10,
-    "opponent_strength": 5,
+    "opponent_strength": 10,
     "supporting_indicators": 5,
 }
 
@@ -192,7 +194,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
         game_state=str(row.get("Game state") or _kickoff_state(row.get("Kickoff ISO"))["state"]).upper()
         live_market_prob=_v18_number(row.get("Market fair %"))
         ranking_prob=(live_market_prob/100.0) if game_state=="LIVE" and live_market_prob is not None and 0<live_market_prob<100 else (prob/100.0 if prob is not None else None)
-        # V21 probability-first rule: do not exclude a bettable favourite because
+        # V23 probability-first rule: do not exclude a bettable favourite because
         # it lacks positive EV, a +4pp edge, eight bookmakers, or perfect market
         # agreement. Those are advisory diagnostics only. The hard gates are:
         # exact fixture match, a valid current 1X2 price, and an actionable game.
@@ -224,10 +226,10 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     chosen=best_ready or best_below
     if chosen is None: return {"status":"INSUFFICIENT","legs":[],"combined_odds":None,"joint_probability":None,"reason":"No valid combination could be formed."}
     _,combo,combined,joint=chosen; ready=best_ready is not None
-    return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest estimated joint success probability among combinations reaching the target." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
+    return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest model-estimated joint probability among combinations reaching the target. The multiplication assumes match independence; V23 separately audits Safest-Five historical hit rates." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V21.1 Full Fixture Ranking", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V23 Production", page_icon="📈", layout="wide")
 
 
 
@@ -351,7 +353,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V21.1 FULL FIXTURE</span>
+ <span class="v14-chip">V23 PRODUCTION</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Nitrous-inspired dashboard styling with evidence-backed football decisions. • Real market comparison</div></div></div>
@@ -388,7 +390,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V21.1 FULL FIXTURE</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V23 PRODUCTION</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -443,7 +445,7 @@ hr{border-color:#173247!important}
 
 st.markdown("""
 <style>
-/* --- V21.1 FULL FIXTURE EDITION VISUAL LAYER --------------------------------------- */
+/* --- V23 PRODUCTION EDITION VISUAL LAYER --------------------------------------- */
 :root{
   --street-bg:#04070d; --street-panel:#0a1119; --street-panel2:#101924;
   --street-line:#243446; --street-text:#f4f8ff; --street-muted:#9db0c2;
@@ -573,7 +575,7 @@ div[data-testid="stMetricValue"]{color:#fff!important}
 }
 </style>
 <div style="margin:-2px 0 12px; padding:10px 14px; border-radius:16px; border:1px solid rgba(255,138,29,.22); background:linear-gradient(90deg, rgba(255,138,29,.08), rgba(43,231,255,.06)); color:#c8d7e7; font-size:.88rem;">
-  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V21.1 full-fixture ranking: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
+  <b style="color:#fff; letter-spacing:.04em;">STREET EDITION</b> · V23 production-grade validation + full-fixture ranking: unfinished fixtures stay in the probability table even when current odds are not yet verified. Price verification is required only for return calculations and live betting.
 </div>
 """, unsafe_allow_html=True)
 
@@ -600,9 +602,17 @@ V15_POLICY={
 }
 # Only leagues actually present in OpenFootball's 2026/27 JSON repository are exposed.
 SEASONS=["2018-19","2019-20","2020-21","2021-22","2022-23","2023-24","2024-25","2025-26","2026-27"]
-FEATURES=["h_pts","a_pts","h_gf","a_gf","h_ga","a_ga","elo_diff","elo_home"]
+FEATURES=[
+    "h_pts","a_pts","h_gf","a_gf","h_ga","a_ga",
+    "elo_diff","elo_home",
+    "h_venue_ppg","a_venue_ppg",
+    "h_opp_adj_ppg","a_opp_adj_ppg",
+    "h_perf_vs_expect","a_perf_vs_expect",
+    "h_rest_days","a_rest_days",
+    "h_games14","a_games14",
+]
 
-HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV15/1.0","Accept":"application/json"}
+HEADERS={"User-Agent":"Mozilla/5.0 FootballPredictorV22/1.0","Accept":"application/json"}
 
 def get_json(url):
     r=requests.get(url,headers=HEADERS,timeout=25)
@@ -633,8 +643,107 @@ def score_ft(m):
 
 def elo_p(d): return 1/(1+10**(-d/400))
 
+def _mean_or(rows,key,default=0.0):
+    vals=[]
+    for x in rows:
+        try:
+            v=float(x.get(key))
+            if np.isfinite(v): vals.append(v)
+        except Exception:
+            pass
+    return float(np.mean(vals)) if vals else float(default)
+
+def _empirical_bayes(recent_value, recent_n, prior_value, prior_strength=5.0):
+    """Shrink noisy small samples toward a longer-run team prior."""
+    n=max(float(recent_n),0.0)
+    k=max(float(prior_strength),0.01)
+    return float((n*float(recent_value)+k*float(prior_value))/(n+k))
+
+def _team_live_features(hist, team, venue, fixture_date):
+    rows=list(hist[team])
+    last=rows[-8:]
+    long_run=rows[-20:]
+    venue_rows=[x for x in rows if x.get("venue")==venue][-8:]
+
+    # Long-run team priors stabilize early-season / small-sample form.
+    prior_pts=_mean_or(long_run,"pts",1.35)
+    prior_gf=_mean_or(long_run,"gf",1.25)
+    prior_ga=_mean_or(long_run,"ga",1.25)
+    recent_pts=_mean_or(last,"pts",prior_pts)
+    recent_gf=_mean_or(last,"gf",prior_gf)
+    recent_ga=_mean_or(last,"ga",prior_ga)
+    pts=_empirical_bayes(recent_pts,len(last),prior_pts,5.0)
+    gf=_empirical_bayes(recent_gf,len(last),prior_gf,5.0)
+    ga=_empirical_bayes(recent_ga,len(last),prior_ga,5.0)
+
+    venue_prior=prior_pts
+    venue_raw=_mean_or(venue_rows,"pts",venue_prior)
+    venue_ppg=_empirical_bayes(venue_raw,len(venue_rows),venue_prior,4.0)
+
+    # Stronger opponent adjustment: evaluate each result against what Elo said
+    # was expected BEFORE that match. Positive residual = team performed better
+    # than the strength of its opponent/context implied.
+    residuals=[]
+    adj_points=[]
+    for x in last:
+        try:
+            outcome=float(x.get("result_score", float(x.get("pts",0.0))/3.0))
+            expected=float(x.get("expected_score",0.5))
+            residuals.append(outcome-expected)
+            opp_elo=float(x.get("opp_elo",1500.0))
+            # descriptive opponent-adjusted points retained for diagnostics/features
+            adj_points.append(float(x.get("pts",0.0))*float(np.clip(opp_elo/1500.0,.80,1.20)))
+        except Exception:
+            pass
+    perf_vs_expect=float(np.mean(residuals)) if residuals else 0.0
+    opp_adj_raw=float(np.mean(adj_points)) if adj_points else pts
+    opp_adj=_empirical_bayes(opp_adj_raw,len(adj_points),prior_pts,4.0)
+
+    fd=pd.to_datetime(fixture_date,errors="coerce")
+    rest_days=7.0
+    games14=0.0
+    if pd.notna(fd):
+        dated=[]
+        for x in rows:
+            dt=pd.to_datetime(x.get("date"),errors="coerce")
+            if pd.notna(dt) and dt < fd:
+                dated.append(dt)
+                if 0 <= (fd-dt).days <= 14:
+                    games14 += 1.0
+        if dated:
+            rest_days=float(np.clip((fd-max(dated)).days,1,21))
+
+    return {
+        "pts":pts,"gf":gf,"ga":ga,"venue_ppg":venue_ppg,
+        "opp_adj_ppg":opp_adj,"perf_vs_expect":perf_vs_expect,
+        "rest_days":rest_days,"games14":games14,
+        "sample_n":len(last),
+    }
+
+def build_feature_values(hist, elo, home, away, fixture_date):
+    hs=_team_live_features(hist,home,"H",fixture_date)
+    aa=_team_live_features(hist,away,"A",fixture_date)
+    eh,ea=float(elo[home]),float(elo[away])
+    return {
+        "h_pts":hs["pts"],"a_pts":aa["pts"],
+        "h_gf":hs["gf"],"a_gf":aa["gf"],
+        "h_ga":hs["ga"],"a_ga":aa["ga"],
+        "elo_diff":eh-ea,"elo_home":elo_p(eh+55-ea),
+        "h_venue_ppg":hs["venue_ppg"],"a_venue_ppg":aa["venue_ppg"],
+        "h_opp_adj_ppg":hs["opp_adj_ppg"],"a_opp_adj_ppg":aa["opp_adj_ppg"],
+        "h_perf_vs_expect":hs["perf_vs_expect"],"a_perf_vs_expect":aa["perf_vs_expect"],
+        "h_rest_days":hs["rest_days"],"a_rest_days":aa["rest_days"],
+        "h_games14":hs["games14"],"a_games14":aa["games14"],
+    }
+
 def make_training(code,w=8):
-    hist=defaultdict(lambda:deque(maxlen=w))
+    """Chronological training frame with no future leakage.
+
+    Each row is built using only matches already completed before that fixture.
+    The richer V22 features add venue form, opponent-adjusted form, recovery time
+    and recent fixture congestion while retaining the proven Elo/core-form inputs.
+    """
+    hist=defaultdict(lambda:deque(maxlen=20))
     elo=defaultdict(lambda:1500.0)
     rows=[]
     used=0
@@ -648,23 +757,102 @@ def make_training(code,w=8):
             h=team_name(m.get("team1","")).strip()
             a=team_name(m.get("team2","")).strip()
             if not h or not a: continue
-            hg,ag=sc; eh,ea=elo[h],elo[a]
-            def av(t,k):
-                return float(np.mean([x[k] for x in hist[t]])) if hist[t] else 0.
-            vals={"h_pts":av(h,"pts"),"a_pts":av(a,"pts"),
-                  "h_gf":av(h,"gf"),"a_gf":av(a,"gf"),
-                  "h_ga":av(h,"ga"),"a_ga":av(a,"ga"),
-                  "elo_diff":eh-ea,"elo_home":elo_p(eh+55-ea)}
-            if hg>ag: y=0; hp,ap,s=3,0,1.
-            elif hg<ag: y=2; hp,ap,s=0,3,0.
-            else: y=1; hp,ap,s=1,1,.5
-            rows.append({**vals,"y":y})
-            hist[h].append({"pts":hp,"gf":hg,"ga":ag})
-            hist[a].append({"pts":ap,"gf":ag,"ga":hg})
+            dt=pd.to_datetime(m.get("date"),errors="coerce")
+            if pd.isna(dt): continue
+            hg,ag=sc
+            eh,ea=float(elo[h]),float(elo[a])
+
+            vals=build_feature_values(hist,elo,h,a,dt)
+            if hg>ag: y=0; hp,ap,res=3,0,1.
+            elif hg<ag: y=2; hp,ap,res=0,3,0.
+            else: y=1; hp,ap,res=1,1,.5
+            rows.append({**vals,"y":y,"_date":dt,"_home":h,"_away":a})
+
+            # Store pre-match expectation for future opponent-adjusted residuals.
+            ex_home=elo_p(eh+55-ea)
+            ex_away=1.0-ex_home
+            hist[h].append({"pts":hp,"gf":hg,"ga":ag,"venue":"H","opp_elo":ea,"date":dt,
+                            "result_score":res,"expected_score":ex_home})
+            hist[a].append({"pts":ap,"gf":ag,"ga":hg,"venue":"A","opp_elo":eh,"date":dt,
+                            "result_score":1.0-res,"expected_score":ex_away})
             ex=elo_p(eh-ea)
-            elo[h]+=24*(s-ex); elo[a]+=24*((1-s)-(1-ex))
+            elo[h]+=24*(res-ex); elo[a]+=24*((1-res)-(1-ex))
             used+=1
-    return pd.DataFrame(rows),hist,elo,used
+    frame=pd.DataFrame(rows)
+    if not frame.empty:
+        frame=frame.sort_values("_date").reset_index(drop=True)
+    return frame,hist,elo,used
+
+def _time_decay_weights(frame, half_life_days=540.0):
+    if "_date" not in frame.columns or frame.empty:
+        return np.ones(len(frame),dtype=float)
+    d=pd.to_datetime(frame["_date"],errors="coerce")
+    ref=d.max()
+    age=(ref-d).dt.days.fillna(0).clip(lower=0).to_numpy(dtype=float)
+    return np.power(0.5, age/max(float(half_life_days),1.0))
+
+class V22ProbabilityEnsemble:
+    def __init__(self, members, weights, temperature=1.0):
+        self.members=members
+        self.weights=np.asarray(weights,dtype=float)
+        self.weights=self.weights/self.weights.sum()
+        self.temperature=float(temperature)
+
+    def predict_proba(self, X):
+        total=None
+        for weight,(model,cols) in zip(self.weights,self.members):
+            p=np.asarray(model.predict_proba(X[cols].fillna(0)),dtype=float)
+            total=weight*p if total is None else total+weight*p
+        p=np.clip(total,1e-8,1.0)
+        # Temperature scaling on probabilities. T>1 softens overconfidence;
+        # T<1 sharpens only when chronological validation supports it.
+        p=np.power(p,1.0/max(self.temperature,1e-6))
+        p=p/p.sum(axis=1,keepdims=True)
+        return p
+
+def _temperature_search(prob, y):
+    best=(float("inf"),1.0)
+    for t in np.arange(0.70,1.51,0.05):
+        p=np.clip(prob,1e-8,1.0)
+        p=np.power(p,1.0/t); p=p/p.sum(axis=1,keepdims=True)
+        try: loss=log_loss(y,p,labels=[0,1,2])
+        except Exception: continue
+        if loss<best[0]: best=(float(loss),float(t))
+    return best
+
+def _fit_candidate_models(train_frame, sample_weight):
+    all_cols=list(FEATURES)
+    elo_cols=["elo_diff","elo_home"]
+    form_cols=[
+        "h_pts","a_pts","h_gf","a_gf","h_ga","a_ga",
+        "h_venue_ppg","a_venue_ppg","h_opp_adj_ppg","a_opp_adj_ppg",
+        "h_perf_vs_expect","a_perf_vs_expect",
+        "h_rest_days","a_rest_days","h_games14","a_games14",
+    ]
+    specs=[
+        ("Gradient boost",HistGradientBoostingClassifier(
+            max_iter=140,max_leaf_nodes=9,learning_rate=.04,
+            min_samples_leaf=32,l2_regularization=8,random_state=42),all_cols),
+        ("Full logistic",LogisticRegression(
+            max_iter=1600,C=.55,solver="lbfgs"),all_cols),
+        ("Elo specialist",LogisticRegression(
+            max_iter=1200,C=.7,solver="lbfgs"),elo_cols),
+        ("Form/context specialist",LogisticRegression(
+            max_iter=1500,C=.55,solver="lbfgs"),form_cols),
+    ]
+    fitted=[]
+    for name,model,cols in specs:
+        model.fit(train_frame[cols].fillna(0),train_frame["y"],sample_weight=sample_weight)
+        fitted.append((name,model,cols))
+    return fitted
+
+def _candidate_probabilities(fitted, frame):
+    result=[]
+    for name,model,cols in fitted:
+        p=np.asarray(model.predict_proba(frame[cols].fillna(0)),dtype=float)
+        result.append((name,p))
+    return result
+
 
 
 
@@ -716,48 +904,354 @@ def fixture_context(code, fixture_date, home, away):
             "injuries":"UNAVAILABLE — no verified injury/suspension provider connected"}
 
 
+def _calibrate_temperature(prob, y, temperature):
+    p=np.clip(np.asarray(prob,dtype=float),1e-8,1.0)
+    p=np.power(p,1.0/max(float(temperature),1e-6))
+    return p/p.sum(axis=1,keepdims=True)
+
+def _rank_product_backtest(frame, prob):
+    """Backtest the actual product: strongest-team ranks and safest-five days."""
+    if frame.empty or len(prob)!=len(frame):
+        return {"rank_rows":[],"safest_five":{}}
+    records=[]
+    y=frame["y"].to_numpy()
+    dates=pd.to_datetime(frame["_date"],errors="coerce").dt.date
+    for j in range(len(frame)):
+        hp=float(prob[j,0]); ap=float(prob[j,2])
+        pick=0 if hp>=ap else 2
+        records.append({
+            "date":dates.iloc[j],
+            "prob":max(hp,ap),
+            "won":bool(y[j]==pick),
+            "pick":"HOME" if pick==0 else "AWAY",
+        })
+    rr=pd.DataFrame(records).dropna(subset=["date"])
+    rank_stats={k:{"n":0,"wins":0} for k in range(1,11)}
+    combo_days=0; combo_wins=0; expected_joint=[]
+    leg_wins=0; leg_total=0
+    for _,g in rr.groupby("date"):
+        g=g.sort_values("prob",ascending=False).reset_index(drop=True)
+        for idx,row in g.head(10).iterrows():
+            rank=idx+1
+            rank_stats[rank]["n"]+=1
+            rank_stats[rank]["wins"]+=int(row["won"])
+        if len(g)>=5:
+            five=g.head(5)
+            combo_days+=1
+            combo_wins+=int(bool(five["won"].all()))
+            expected_joint.append(float(np.prod(five["prob"].to_numpy(dtype=float))))
+            leg_wins+=int(five["won"].sum())
+            leg_total+=5
+    rank_rows=[]
+    for rank,stt in rank_stats.items():
+        if stt["n"]:
+            rank_rows.append({
+                "Rank":rank,"Selections":stt["n"],"Wins":stt["wins"],
+                "Strike %":round(100*stt["wins"]/stt["n"],1)
+            })
+    safest={
+        "Days with 5+ fixtures":combo_days,
+        "All-five wins":combo_wins,
+        "Five-fold hit rate %":round(100*combo_wins/combo_days,1) if combo_days else None,
+        "Leg strike %":round(100*leg_wins/leg_total,1) if leg_total else None,
+        "Mean estimated joint %":round(100*float(np.mean(expected_joint)),1) if expected_joint else None,
+    }
+    return {"rank_rows":rank_rows,"safest_five":safest}
+
 @st.cache_resource(show_spinner=False)
 def train(lname,code):
-    """V15 live engine: conservative model with league-specific calibration policy."""
+    """V23 production validation: TRAIN -> TUNE -> untouched FINAL TEST."""
     f,hist,elo,used=make_training(code)
-    if len(f)<120:
-        raise RuntimeError(f"Only {len(f)} completed historical matches available.")
-    X=f[FEATURES].fillna(0); y=f["y"]
-    policy=V15_POLICY[lname]
+    if len(f)<240:
+        raise RuntimeError(f"Only {len(f)} completed historical matches available; V23 needs at least 240 for a clean three-way split.")
 
-    def conservative():
-        return HistGradientBoostingClassifier(
+    n=len(f)
+    train_end=max(160,int(n*.70))
+    tune_end=max(train_end+40,int(n*.85))
+    if n-tune_end < 35:
+        tune_end=n-35
+    if tune_end-train_end < 35:
+        train_end=tune_end-35
+
+    train_set=f.iloc[:train_end].copy()
+    tune_set=f.iloc[train_end:tune_end].copy()
+    test_set=f.iloc[tune_end:].copy()
+
+    for name,part in [("train",train_set),("tune",tune_set),("final test",test_set)]:
+        if len(part)<30 or part["y"].nunique()<3:
+            raise RuntimeError(f"{lname}: {name} split is too small or lacks all three 1X2 outcomes.")
+
+    # TUNE PHASE: choose recency horizon using tune data only.
+    half_lives=[270.0,365.0,540.0,730.0,1095.0]
+    hl_trials=[]
+    for hl in half_lives:
+        w=_time_decay_weights(train_set,hl)
+        probe=HistGradientBoostingClassifier(
+            max_iter=120,max_leaf_nodes=9,learning_rate=.04,
+            min_samples_leaf=32,l2_regularization=8,random_state=42)
+        probe.fit(train_set[FEATURES].fillna(0),train_set["y"],sample_weight=w)
+        pp=probe.predict_proba(tune_set[FEATURES].fillna(0))
+        hl_trials.append((float(log_loss(tune_set["y"],pp,labels=[0,1,2])),hl))
+    _,best_half_life=min(hl_trials,key=lambda x:x[0])
+
+    train_w=_time_decay_weights(train_set,best_half_life)
+    fitted=_fit_candidate_models(train_set,train_w)
+    tune_probs=_candidate_probabilities(fitted,tune_set)
+    tune_losses=[(name,float(log_loss(tune_set["y"],p,labels=[0,1,2]))) for name,p in tune_probs]
+    min_tune=min(x[1] for x in tune_losses)
+    raw_weights=np.array([np.exp(-8.0*(loss-min_tune)) for _,loss in tune_losses],dtype=float)
+    raw_weights=raw_weights/raw_weights.sum()
+    tune_ensemble=sum(w*p for w,(_,p) in zip(raw_weights,tune_probs))
+    _,temperature=_temperature_search(tune_ensemble,tune_set["y"].to_numpy())
+
+    # FINAL TEST PHASE: freeze all choices above, refit only on TRAIN+TUNE,
+    # and judge the chosen configuration once on the untouched newest block.
+    fit_set=f.iloc[:tune_end].copy()
+    fit_w=_time_decay_weights(fit_set,best_half_life)
+    final_members=_fit_candidate_models(fit_set,fit_w)
+    final_probs=_candidate_probabilities(final_members,test_set)
+    final_ensemble=sum(w*p for w,(_,p) in zip(raw_weights,final_probs))
+    final_ensemble=_calibrate_temperature(final_ensemble,test_set["y"].to_numpy(),temperature)
+    final_loss=float(log_loss(test_set["y"],final_ensemble,labels=[0,1,2]))
+
+    legacy=HistGradientBoostingClassifier(
+        max_iter=100,max_leaf_nodes=7,learning_rate=.045,
+        min_samples_leaf=38,l2_regularization=8,random_state=42)
+    legacy.fit(fit_set[FEATURES].fillna(0),fit_set["y"],sample_weight=fit_w)
+    legacy_p=legacy.predict_proba(test_set[FEATURES].fillna(0))
+    legacy_loss=float(log_loss(test_set["y"],legacy_p,labels=[0,1,2]))
+
+    promote=(final_loss + 0.001) < legacy_loss
+    chosen_test_p=final_ensemble if promote else legacy_p
+    chosen_pred=np.argmax(chosen_test_p,axis=1)
+    acc=float(accuracy_score(test_set["y"],chosen_pred))
+    avg_conf=float(np.max(chosen_test_p,axis=1).mean())
+    calibration_gap=(avg_conf-acc)*100.0
+
+    # Product-level stress tests on the same untouched final block.
+    product_audit=_rank_product_backtest(test_set,chosen_test_p)
+
+    # Refit the promoted architecture on all history only AFTER the untouched
+    # test has approved it. Hyperparameters remain frozen from the tune block.
+    full_w=_time_decay_weights(f,best_half_life)
+    if promote:
+        full_fitted=_fit_candidate_models(f,full_w)
+        members=[(model,cols) for _,model,cols in full_fitted]
+        model=V22ProbabilityEnsemble(members,raw_weights,temperature)
+        engine_label="V23 VALIDATED ENSEMBLE"
+        chosen_loss=final_loss
+    else:
+        legacy_full=HistGradientBoostingClassifier(
             max_iter=100,max_leaf_nodes=7,learning_rate=.045,
             min_samples_leaf=38,l2_regularization=8,random_state=42)
+        legacy_full.fit(f[FEATURES].fillna(0),f["y"],sample_weight=full_w)
+        model=legacy_full
+        engine_label="V23 LEGACY SAFETY FALLBACK"
+        chosen_loss=legacy_loss
 
-    if policy["engine"]=="calibrated":
-        # Strict chronology: base model sees the earlier 82%; sigmoid calibrator
-        # sees only the later 18%. No future fixture/result enters either stage.
-        cut=max(250,int(len(f)*.82))
-        proper=f.iloc[:cut]; cal=f.iloc[cut:]
-        base=conservative()
-        base.fit(proper[FEATURES].fillna(0),proper["y"])
-        model=base
-        if len(cal)>=50 and cal["y"].nunique()==3:
-            try:
-                calibrated=CalibratedClassifierCV(base,method="sigmoid",cv="prefit")
-                calibrated.fit(cal[FEATURES].fillna(0),cal["y"])
-                model=calibrated
-            except Exception:
-                # Fail closed to raw rather than pretending calibration succeeded.
-                model=base
-        engine_label="V15 CALIBRATED CONSERVATIVE" if model is not base else "V15 RAW SAFETY FALLBACK"
-    else:
-        model=conservative()
-        model.fit(X,y)
-        engine_label="V15 RAW CONSERVATIVE"
-
-    return model,hist,elo,used,engine_label,policy["status"],policy["evidence"]
+    weights_map={name:round(float(w),3) for (name,_),w in zip(tune_losses,raw_weights)}
+    meta={
+        "League":lname,
+        "Engine":engine_label,
+        "Train matches":int(len(train_set)),
+        "Tune matches":int(len(tune_set)),
+        "Final test matches":int(len(test_set)),
+        "Legacy log loss":round(legacy_loss,4),
+        "V23 log loss":round(float(chosen_loss),4),
+        "Accuracy %":round(acc*100,1),
+        "Avg confidence %":round(avg_conf*100,1),
+        "Calibration gap pp":round(calibration_gap,1),
+        "Time-decay half-life days":int(best_half_life),
+        "Temperature":round(float(temperature if promote else 1.0),2),
+        "Ensemble weights":weights_map if promote else {"Legacy conservative":1.0},
+        "Promoted":bool(promote),
+        "Rank audit":product_audit["rank_rows"],
+        "Safest-five audit":product_audit["safest_five"],
+    }
+    validation_status="V23 PROMOTED" if promote else "V23 FALLBACK"
+    validation_evidence=(
+        f"Untouched final test: legacy log loss {legacy_loss:.4f}; "
+        f"candidate {final_loss:.4f}; {len(test_set)} newest unseen matches. "
+        f"All decay/weight/calibration choices were frozen on the earlier tune block."
+    )
+    return model,hist,elo,used,engine_label,validation_status,validation_evidence,meta
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def fixtures_for(code):
     return season_json("2026-27",code)["matches"]
 
+
+# Optional premium football-context provider.
+# Add API_FOOTBALL_KEY to Streamlit Secrets to activate. The app remains fully
+# operational without it and never fabricates xG, injuries or line-ups.
+API_FOOTBALL_BASE="https://v3.football.api-sports.io"
+API_FOOTBALL_LEAGUES={
+    "Premier League":39,"Championship":40,"Bundesliga":78,
+    "La Liga":140,"Serie A":135,"Ligue 1":61,
+}
+
+def _streamlit_api_football_secret():
+    try:
+        return str(st.secrets.get("API_FOOTBALL_KEY","")).strip()
+    except Exception:
+        return ""
+
+@st.cache_data(ttl=900,show_spinner=False)
+def _api_football_get(path, params, api_key):
+    if not api_key:
+        return []
+    r=requests.get(
+        f"{API_FOOTBALL_BASE}/{path}",
+        headers={"x-apisports-key":api_key},
+        params=params,timeout=25
+    )
+    r.raise_for_status()
+    payload=r.json()
+    errs=payload.get("errors") if isinstance(payload,dict) else None
+    if errs:
+        raise RuntimeError(f"API-Football error: {errs}")
+    return payload.get("response",[]) if isinstance(payload,dict) else []
+
+def _extract_stat(stats, name):
+    target=str(name).casefold().replace(" ","_")
+    for item in stats or []:
+        t=str(item.get("type","")).casefold().replace(" ","_")
+        if t==target:
+            try:
+                v=item.get("value")
+                if isinstance(v,str): v=v.replace("%","")
+                return float(v)
+            except Exception:
+                return None
+    return None
+
+@st.cache_data(ttl=1800,show_spinner=False)
+def api_football_fixture_context(lname, match_day, home, away, api_key):
+    """Best-effort true provider context for ONE upcoming fixture.
+
+    Returns only values actually supplied by API-Football. It is intentionally
+    conservative: if fixture identity is ambiguous, no enrichment is applied.
+    """
+    if not api_key or lname not in API_FOOTBALL_LEAGUES:
+        return {"available":False,"reason":"API_FOOTBALL_KEY not connected"}
+    league_id=API_FOOTBALL_LEAGUES[lname]
+    date_s=pd.to_datetime(match_day).strftime("%Y-%m-%d")
+    fixtures=_api_football_get("fixtures",{"league":league_id,"season":2026,"date":date_s},api_key)
+
+    matches=[]
+    for f in fixtures:
+        teams=f.get("teams",{})
+        hn=str((teams.get("home") or {}).get("name",""))
+        an=str((teams.get("away") or {}).get("name",""))
+        if team_match(home,hn) and team_match(away,an):
+            matches.append(f)
+    if len(matches)!=1:
+        return {"available":False,"reason":f"Expected one provider fixture match; found {len(matches)}"}
+
+    fx=matches[0]
+    fixture_id=(fx.get("fixture") or {}).get("id")
+    ht=(fx.get("teams") or {}).get("home") or {}
+    at=(fx.get("teams") or {}).get("away") or {}
+    if not fixture_id:
+        return {"available":False,"reason":"Provider fixture has no ID"}
+
+    injuries=_api_football_get("injuries",{"fixture":fixture_id},api_key)
+    lineups=_api_football_get("fixtures/lineups",{"fixture":fixture_id},api_key)
+
+    home_inj=[]; away_inj=[]
+    for x in injuries:
+        team=(x.get("team") or {}).get("name","")
+        player=(x.get("player") or {}).get("name","")
+        reason=x.get("player",{}).get("reason") or x.get("reason") or ""
+        rec={"player":player,"reason":reason}
+        if team_match(team,home): home_inj.append(rec)
+        elif team_match(team,away): away_inj.append(rec)
+
+    confirmed={"home":None,"away":None}
+    for lu in lineups:
+        tn=(lu.get("team") or {}).get("name","")
+        starters=[((p.get("player") or {}).get("name","")) for p in (lu.get("startXI") or [])]
+        if team_match(tn,home): confirmed["home"]=[x for x in starters if x]
+        elif team_match(tn,away): confirmed["away"]=[x for x in starters if x]
+
+    # Current fixture stats usually appear only once a match starts; for a
+    # pre-match fixture we explicitly do NOT call them "xG".
+    return {
+        "available":True,"fixture_id":fixture_id,
+        "home_team_id":ht.get("id"),"away_team_id":at.get("id"),
+        "injuries":{"home":home_inj,"away":away_inj},
+        "confirmed_lineup":confirmed,
+        "lineups_confirmed":bool(confirmed["home"] and confirmed["away"]),
+        "reason":"Verified provider fixture matched",
+    }
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def api_football_recent_xg(team_id, before_date, api_key, sample=5):
+    """Rolling TRUE xG/xGA from provider fixture statistics when available."""
+    if not api_key or not team_id:
+        return {"available":False}
+    # Pull recent completed fixtures for the team, then inspect provider stats.
+    fixtures=_api_football_get("fixtures",{"team":int(team_id),"last":int(sample+3),"status":"FT"},api_key)
+    cutoff=pd.to_datetime(before_date,utc=True,errors="coerce")
+    vals=[]
+    for f in fixtures:
+        fd=pd.to_datetime((f.get("fixture") or {}).get("date"),utc=True,errors="coerce")
+        if pd.isna(fd) or (pd.notna(cutoff) and fd>=cutoff): continue
+        fid=(f.get("fixture") or {}).get("id")
+        if not fid: continue
+        stats_resp=_api_football_get("fixtures/statistics",{"fixture":fid},api_key)
+        if len(stats_resp)!=2: continue
+        own=None; opp=None
+        for block in stats_resp:
+            tid=(block.get("team") or {}).get("id")
+            xg=_extract_stat(block.get("statistics"),"expected_goals")
+            if tid==int(team_id): own=xg
+            else: opp=xg
+        if own is not None and opp is not None:
+            vals.append((float(own),float(opp)))
+        if len(vals)>=sample: break
+    if len(vals)<3:
+        return {"available":False,"matches":len(vals)}
+    return {
+        "available":True,"matches":len(vals),
+        "xg_for":float(np.mean([x[0] for x in vals])),
+        "xg_against":float(np.mean([x[1] for x in vals])),
+    }
+
+def _external_context_adjustment(base_prob, home_xg, away_xg, pick, injuries, confirmed_lineup):
+    """Bounded second-stage context adjustment.
+
+    It never creates a probability from missing data. True xG is translated into
+    a Poisson directional probability and blended modestly according to sample
+    depth. Injury/lineup data modifies uncertainty only, not player 'value',
+    because player-impact coefficients have not yet been learned historically.
+    """
+    p=float(base_prob)
+    details=[]
+    if home_xg.get("available") and away_xg.get("available"):
+        # Expected scoring rates combine own creation and opponent prevention.
+        lh=max(.15,(home_xg["xg_for"]+away_xg["xg_against"])/2)
+        la=max(.15,(away_xg["xg_for"]+home_xg["xg_against"])/2)
+        ph=pdra=pa=0.0
+        for i in range(8):
+            for j in range(8):
+                pr=math.exp(-lh)*lh**i/math.factorial(i)*math.exp(-la)*la**j/math.factorial(j)
+                if i>j: ph+=pr
+                elif i<j: pa+=pr
+                else: pdra+=pr
+        xgp=ph if pick=="HOME" else pa
+        sample=min(home_xg.get("matches",0),away_xg.get("matches",0))
+        weight=min(.15,.03*sample)  # capped; model remains dominant
+        p=(1-weight)*p+weight*xgp
+        details.append(f"true xG blend {weight*100:.0f}% from {sample} recent provider matches")
+
+    h_inj=len((injuries or {}).get("home",[]))
+    a_inj=len((injuries or {}).get("away",[]))
+    if h_inj or a_inj:
+        details.append(f"verified absences: home {h_inj}, away {a_inj}")
+    if confirmed_lineup:
+        details.append("confirmed line-ups available")
+    return float(np.clip(p,.01,.99)),details
 
 ODDS_BASE="https://api.the-odds-api.com/v4/sports"
 
@@ -1325,7 +1819,7 @@ with st.expander("View league engine policy",expanded=False):
 
 st.subheader("🔐 Live data connection")
 
-# V21.1: load the Odds API key automatically from Streamlit Secrets.
+# V22: load the Odds API key automatically from Streamlit Secrets.
 # The secret stays outside GitHub/source code. A temporary session override is
 # still available for diagnostics, but normal use requires no re-entry.
 def _streamlit_odds_secret():
@@ -1384,7 +1878,24 @@ else:
             st.rerun()
 
 st.markdown("### 🏁 Probability-first mode")
-st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. Current odds are helpful, not a gate. No positive-EV gate and no +4pp edge gate. The app ranks the strongest teams; you decide what to use.")
+st.caption("Every unfinished fixture in your chosen dates enters the ranking pool. Current odds are helpful, not a gate. No positive-EV gate and no +4pp edge gate. V22 ranks teams using a league-specific ensemble trained with recency weighting, opponent-adjusted form, venue form, rest and fixture congestion.")
+with st.expander("What changed in the V22 prediction engine?",expanded=False):
+    st.markdown("""
+**V23 does not simply add more filters.** It tries to improve the probability itself.
+
+- Four independent models compete: gradient boosting, full logistic, Elo specialist and form/context specialist.
+- **Three-way chronological validation** separates training, tuning/calibration and a completely untouched final test.
+- Model weights are learned from the tune block rather than chosen by hand, then judged once on the final test.
+- Recent matches receive more weight, with the decay horizon selected per league before final testing.
+- Small samples are shrunk toward longer-run team priors rather than being trusted at face value.
+- Form accounts for opponent strength using performance-versus-expectation, plus home/away performance, recovery days and 14-day fixture congestion.
+- A temperature calibration step corrects systematic over/under-confidence.
+- The ensemble is used only when it beats the previous conservative engine on untouched final-test log loss; otherwise the app falls back automatically.
+- The app backtests the **actual product**: rank-by-rank Top 10 performance and Safest-Five matchdays.
+- Bookmaker consensus can become a predictive input, but its weight is **learned from settled results** and promoted only after beating model-only probabilities.
+- Optional API-Football enrichment can add **true provider xG**, verified injuries and confirmed line-ups. Missing provider data is never invented.
+- Current bookmaker prices remain required for target-return calculations but do not decide whether a future fixture appears in the Top 10.
+""")
 # Compatibility values retained for older diagnostics only; they no longer gate the Top 10 or acca pool.
 min_conf=0
 min_edge=0
@@ -1392,7 +1903,7 @@ min_books=1
 max_edge=100
 topn=10
 
-# V21.1 fixture picker: date changes stay local until GO is pressed.
+# V22 fixture picker: date changes stay local until GO is pressed.
 # This prevents the expensive football analysis from rerunning while the user
 # is still tapping around the calendar on a phone/tablet.
 _today=date.today()
@@ -1520,6 +2031,75 @@ def _record_live_bets(df):
             led=pd.concat([led,pd.DataFrame([row])],ignore_index=True)
     st.session_state.v16_ledger=led[LEDGER_COLUMNS]
 
+def _logit01(p):
+    p=float(np.clip(float(p),1e-5,1-1e-5))
+    return math.log(p/(1-p))
+
+def _learn_market_blender():
+    """Learn model-vs-market weighting from settled signals, never by hand.
+
+    Requires enough settled observations in the app ledger. Until then, the
+    main model probability remains untouched and market probability is shown
+    only as evidence.
+    """
+    try:
+        _ensure_ledger()
+        led=st.session_state.v16_ledger.copy()
+    except Exception:
+        return None,{"status":"unavailable","n":0}
+    if led.empty:
+        return None,{"status":"collecting","n":0}
+    q=led.copy()
+    q["Won_num"]=q["Won"].map({True:1,False:0})
+    q["mp"]=pd.to_numeric(q["Model probability %"],errors="coerce")/100.0
+    q["mk"]=pd.to_numeric(q["Market fair %"],errors="coerce")/100.0
+    q=q.dropna(subset=["Won_num","mp","mk"])
+    q=q[(q["mp"]>0)&(q["mp"]<1)&(q["mk"]>0)&(q["mk"]<1)]
+    if len(q)<50 or q["Won_num"].nunique()<2:
+        return None,{"status":"collecting","n":int(len(q))}
+    X=np.column_stack([q["mp"].map(_logit01),q["mk"].map(_logit01)])
+    y=q["Won_num"].astype(int).to_numpy()
+    # Time-ordered holdout so the market blender must prove itself as well.
+    cut=max(35,int(len(q)*.75))
+    trX,teX=X[:cut],X[cut:]
+    try_=y[:cut]; tey=y[cut:]
+    if len(np.unique(try_))<2 or len(tey)<10:
+        return None,{"status":"collecting","n":int(len(q))}
+    blend=LogisticRegression(C=.5,max_iter=1000).fit(trX,try_)
+    blend_p=blend.predict_proba(teX)[:,1]
+    base_p=q["mp"].to_numpy()[cut:]
+    blend_loss=float(log_loss(tey,blend_p,labels=[0,1]))
+    base_loss=float(log_loss(tey,base_p,labels=[0,1]))
+    if blend_loss >= base_loss:
+        return None,{"status":"not_promoted","n":int(len(q)),"base_loss":base_loss,"blend_loss":blend_loss}
+    final=LogisticRegression(C=.5,max_iter=1000).fit(X,y)
+    return final,{
+        "status":"promoted","n":int(len(q)),
+        "base_loss":base_loss,"blend_loss":blend_loss,
+        "model_coef":float(final.coef_[0][0]),
+        "market_coef":float(final.coef_[0][1]),
+    }
+
+def _apply_market_blender(df):
+    blender,meta=_learn_market_blender()
+    out=df.copy()
+    out["Probability source"]="V23 football model"
+    if blender is None:
+        return out,meta
+    for i,r in out.iterrows():
+        try:
+            mp=float(r.get("Confidence %"))/100.0
+            mk=float(r.get("Market fair %"))/100.0
+            if not (0<mp<1 and 0<mk<1): continue
+            X=np.array([[_logit01(mp),_logit01(mk)]])
+            p=float(blender.predict_proba(X)[0,1])*100.0
+            # Blend is for the selected team win event; keep it bounded.
+            out.at[i,"Ranking %"]=float(np.clip(p,1.0,99.0))
+            out.at[i,"Probability source"]="Validated model + market blender"
+        except Exception:
+            pass
+    return out,meta
+
 def _settle_ledger():
     _ensure_ledger(); led=st.session_state.v16_ledger.copy()
     for j,r in led.iterrows():
@@ -1580,16 +2160,18 @@ def _tracker_panel():
 
 scope=st.selectbox("Competition",["ALL SUPPORTED LEAGUES"]+list(LEAGUES))
 
-st.info("V21.1 • FULL FIXTURE RANKING — all unfinished fixtures in the selected dates are ranked; current odds are shown when verified.")
+st.info("V23 • PRODUCTION ENGINE — richer football features, time-decay training, chronological model competition and probability calibration.")
 
 if True:
     selected=LEAGUES if scope=="ALL SUPPORTED LEAGUES" else {scope:LEAGUES[scope]}
     odds_key=(st.session_state.get("odds_key_override", "").strip() or _streamlit_odds_secret())
+    api_football_key=_streamlit_api_football_secret()
     quota_remaining=None
     diagnostics=[]
     out=[]; warnings=[]
     skipped_completed=0
     skipped_stale=0
+    engine_diagnostics=[]
     with st.spinner("Loading verified fixtures and training league models..."):
         for lname,meta in selected.items():
             code=meta["of"]
@@ -1630,11 +2212,11 @@ if True:
                     games.append((_m,_match_day))
             if not games: continue
             try:
-                model,hist,elo,ntrain,engine_label,validation_status,validation_evidence=train(lname,code)
+                model,hist,elo,ntrain,engine_label,validation_status,validation_evidence,engine_meta=train(lname,code)
+                engine_diagnostics.append(engine_meta)
             except Exception as e:
                 warnings.append(f"{lname}: model unavailable ({e})")
                 continue
-            def av(t,k): return float(np.mean([x[k] for x in hist[t]])) if hist[t] else 0.
             for g,match_day in games:
                 # Never analyse/recommend a fixture that the results feed already marks complete.
                 if score_ft(g) is not None:
@@ -1642,10 +2224,7 @@ if True:
                     continue
                 h=team_name(g.get("team1","")).strip(); a=team_name(g.get("team2","")).strip()
                 if not h or not a: continue
-                vals={"h_pts":av(h,"pts"),"a_pts":av(a,"pts"),
-                      "h_gf":av(h,"gf"),"a_gf":av(a,"gf"),
-                      "h_ga":av(h,"ga"),"a_ga":av(a,"ga"),
-                      "elo_diff":elo[h]-elo[a],"elo_home":elo_p(elo[h]+55-elo[a])}
+                vals=build_feature_values(hist,elo,h,a,pd.to_datetime(match_day))
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
                 # V21 ranks TEAMS most likely to win, not the most likely 1X2
@@ -1712,7 +2291,7 @@ if True:
                 context = fixture_context(code, match_day, h, a)
                 secondary_checks=[]
 
-                # V21.1: probability ranking and market verification are separate.
+                # V22: probability ranking and market verification are separate.
                 # Missing current odds no longer removes an unfinished future fixture.
                 if not market_verified:
                     decision="PREDICTION ONLY"
@@ -1763,8 +2342,70 @@ if True:
     d["Selection score"]=[audit["score"] for audit in d["V18 audit"]]
     d["Tier"]=[audit["tier"] for audit in d["V18 audit"]]
     d["Ranking %"]=pd.to_numeric(d["Confidence %"],errors="coerce")
+
+    if engine_diagnostics:
+        with st.expander("🧪 V23 engine stress test — chronological unseen matches",expanded=False):
+            st.caption("Each league uses three chronological blocks: TRAIN, TUNE/CALIBRATE and an untouched FINAL TEST. All model weights, recency decay and calibration are frozen before the final block. V23 promotes only when it beats the previous conservative engine on that untouched newest sample.")
+            _eng=pd.DataFrame(engine_diagnostics)
+            _cols=["League","Engine","Train matches","Tune matches","Final test matches","Legacy log loss","V23 log loss","Accuracy %","Avg confidence %","Calibration gap pp","Time-decay half-life days","Temperature","Promoted"]
+            st.dataframe(_eng[[c for c in _cols if c in _eng.columns]],hide_index=True,use_container_width=True)
+            for meta in engine_diagnostics:
+                with st.expander(f'{meta["League"]} model weights + product backtest',expanded=False):
+                    st.json(meta.get("Ensemble weights",{}))
+                    _rr=meta.get("Rank audit") or []
+                    if _rr:
+                        st.caption("Top-10 rank strike rates on the untouched final test")
+                        st.dataframe(pd.DataFrame(_rr),hide_index=True,use_container_width=True)
+                    _sf=meta.get("Safest-five audit") or {}
+                    if _sf:
+                        st.caption("Historical Safest-Five product audit on final-test matchdays with at least five fixtures")
+                        st.json(_sf)
+            st.caption("Market-consensus blending is learned separately from settled live-ledger results and is promoted only after beating model-only probabilities on a chronological holdout.")
+            st.json(market_blend_meta)
     _live_mask=d["Game state"].eq("LIVE") & pd.to_numeric(d["Market fair %"],errors="coerce").notna()
     d.loc[_live_mask,"Ranking %"]=pd.to_numeric(d.loc[_live_mask,"Market fair %"],errors="coerce")
+    # If enough settled history exists, learn the model/market relationship from
+    # our own results and use it only after it beats model-only probabilities on
+    # a chronological holdout. No arbitrary 70/30 market weighting.
+    d,market_blend_meta=_apply_market_blender(d)
+
+    # Premium external enrichment is intentionally limited to the strongest
+    # candidates to control API usage. It activates automatically when the secret
+    # exists and never fabricates a value when provider data is missing.
+    d["External data status"]="Not connected" if not api_football_key else "No provider match"
+    d["External context"]=[[] for _ in range(len(d))]
+    if api_football_key:
+        candidate_idx=d.sort_values("Ranking %",ascending=False).head(12).index.tolist()
+        for ridx in candidate_idx:
+            r=d.loc[ridx]
+            try:
+                ext=api_football_fixture_context(r["League"],r["Match date"],r["Home team"],r["Away team"],api_football_key)
+                if not ext.get("available"):
+                    d.at[ridx,"External data status"]=ext.get("reason","Unavailable")
+                    continue
+                hx=api_football_recent_xg(ext.get("home_team_id"),r.get("Kickoff ISO") or r["Match date"],api_football_key,5)
+                ax=api_football_recent_xg(ext.get("away_team_id"),r.get("Kickoff ISO") or r["Match date"],api_football_key,5)
+                base=float(d.at[ridx,"Ranking %"])/100.0
+                newp,details=_external_context_adjustment(
+                    base,hx,ax,str(r["Pick"]),
+                    ext.get("injuries"),ext.get("lineups_confirmed",False)
+                )
+                d.at[ridx,"Ranking %"]=round(newp*100,2)
+                d.at[ridx,"External data status"]="Verified provider context"
+                d.at[ridx,"External context"]=details
+                # Carry verified availability into the evidence panel.
+                ctx=d.at[ridx,"Context"] if isinstance(d.at[ridx,"Context"],dict) else {}
+                inj=ext.get("injuries") or {}
+                ctx["injuries"]=f"VERIFIED — home {len(inj.get('home',[]))}, away {len(inj.get('away',[]))}"
+                ctx["confirmed_lineups"]=ext.get("confirmed_lineup")
+                ctx["true_xg_home"]=hx if hx.get("available") else None
+                ctx["true_xg_away"]=ax if ax.get("available") else None
+                d.at[ridx,"Context"]=ctx
+                if details:
+                    d.at[ridx,"Probability source"]=str(d.at[ridx,"Probability source"])+" + provider context"
+            except Exception as e:
+                d.at[ridx,"External data status"]=f"Provider error: {e}"
+
     if d["Game state"].eq("LIVE").any():
         live_names=d.loc[d["Game state"].eq("LIVE"),["Match","Timing label"]].head(5)
         live_text=" • ".join(f'{r["Match"]}: {r["Timing label"]}' for _,r in live_names.iterrows())
@@ -1847,13 +2488,13 @@ if True:
         component_labels={"model_probability":"Model probability","goals_profile":"Scoring profile*","recent_venue_form":"Recent + venue form","market_value":"Verified market value","availability_evidence":"Availability evidence","opponent_strength":"Opponent strength","supporting_indicators":"Supporting indicators"}
         component_rows=[{"Evidence component":component_labels[k],"Weight":f"{w}%","Component score":audit["components"][k]} for k,w in WEIGHTS.items()]
         st.dataframe(pd.DataFrame(component_rows),hide_index=True,use_container_width=True)
-        st.caption("*Evidence tier is advisory only in V21.1 and never blocks a team from the probability ranking. Scoring profile is a goals-rate proxy, not provider-supplied xG.")
+        st.caption("*Evidence tier is advisory only in V22 and never blocks a team from the probability ranking. Scoring profile is a goals-rate proxy, not provider-supplied xG.")
         if audit.get("positives"): st.success("Supports pick: "+" • ".join(audit["positives"]))
         if audit.get("concerns"): st.warning("Concerns: "+" • ".join(audit["concerns"]))
         if audit.get("penalties"): st.caption("Risk penalties: "+" • ".join(f'-{p["points"]} {p["reason"]}' for p in audit["penalties"]))
         st.caption(r.get("Decision reason", ""))
 
-    # V21.1 FULL FIXTURE DASHBOARD — one clear question: who is most likely to win?
+    # V23 PRODUCTION DASHBOARD — one clear question: who is most likely to win?
     def _context_signal_v171(r):
         ctx=r.get("Context")
         if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
@@ -1979,8 +2620,8 @@ if True:
             st.markdown(card,unsafe_allow_html=True)
             with st.expander("See full analysis",expanded=False): _detail_panel(r)
 
-    st.markdown('<div class="v171-lens">⚡ Strongest five at a glance</div>',unsafe_allow_html=True)
-    st.caption("These are simply ranks 1–5 from the probability table — not forced value bets. They are the first five to inspect if you want a five-team acca, and you remain free to swap any leg.")
+    st.markdown('<div class="v171-lens">🛡️ Safest five at a glance</div>',unsafe_allow_html=True)
+    st.caption("These are ranks 1–5 from the calibrated probability table. No value/edge gate is imposed. Treat this as the safest five shortlist, then use the evidence panels to decide whether you want to swap a leg.")
     if not strongest_five.empty:
         _five=strongest_five[["Match date","League","Match","Pick","Ranking %","Best market odds","Game state","Timing label"]].copy()
         _five["Selection"]=strongest_five.apply(_team_for_pick,axis=1)
@@ -2004,6 +2645,14 @@ if True:
     with st.expander("📈 Model performance & validation",expanded=False): _tracker_panel()
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
     if not odds_key: st.warning("No current-odds key is connected, so current bettable-market verification is unavailable.")
+
+with st.expander("🔌 Advanced data providers",expanded=False):
+    _af=_streamlit_api_football_secret()
+    st.write("**API-Football enrichment:** "+("✅ Connected" if _af else "⚪ Not connected"))
+    st.caption("When API_FOOTBALL_KEY is present in Streamlit Secrets, V23 attempts to match the strongest current fixtures, retrieve verified injuries/confirmed line-ups and rolling provider expected-goals statistics, and apply a bounded second-stage context blend. If data is unavailable or fixture identity is ambiguous, the base probability is left untouched.")
+    st.write("**The Odds API:** "+("✅ Connected" if (_streamlit_odds_secret() or st.session_state.get("odds_key_override")) else "⚪ Not connected"))
+    st.caption("Current prices feed return calculations immediately. Predictive market blending is never assigned a hand-picked weight: V23 learns it from settled ledger history and activates it only after chronological holdout improvement.")
+
 st.divider()
-st.caption("V21.1 Full Fixture Ranking: finished/stale fixtures stay hidden. Future unfinished fixtures can enter the Top 10 even before odds are verified. Verified current prices are required only for live inclusion and stake-to-target acca calculations. EV and model-vs-market edge never gate the ranking.")
+st.caption("V23 Production: full-fixture ranking + chronologically validated ensemble. Finished/stale fixtures stay hidden. Future unfinished fixtures can rank before odds are verified. Prices are required only for live inclusion and target-return calculations. No model can guarantee outcomes; probabilities are validated estimates.")
 
