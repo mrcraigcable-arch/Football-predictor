@@ -142,7 +142,9 @@ def score_selection(row):
     elif "APPROVED RAW" in validation: penalties.append((3,"League evidence favours an uncalibrated model"))
     if not availability_verified: penalties.append((5,"Availability evidence missing"))
     if integrity and integrity!="OK": penalties.append((8,"Bookmaker prices disagree"))
-    if decision=="PASS": penalties.append((15,"Existing confidence/value gate failed"))
+    # V21: value/EV is no longer an eligibility gate. Keep market-quality
+    # evidence visible, but do not punish a strong win prediction simply because
+    # the bookmaker price offers little model edge.
     if decision=="PREDICTION ONLY": penalties.append((10,"No matched current market"))
     if pick=="DRAW": penalties.append((20,"Draws are excluded from the acca shortlist"))
     if form_advantage is not None and form_advantage<=-.35: penalties.append((7,"Recent form conflicts with the model pick"))
@@ -152,8 +154,8 @@ def score_selection(row):
     penalty_total=sum(p for p,_ in penalties)
     final_score=round(_v18_clip(base_score-penalty_total),1)
     outright=pick in ("HOME","AWAY")
-    if outright and decision=="BET" and final_score>=70: tier="ELITE"
-    elif outright and decision in ("BET","VERIFY") and final_score>=60: tier="STRONG"
+    if outright and final_score>=70: tier="ELITE"
+    elif outright and final_score>=60: tier="STRONG"
     elif outright and final_score>=48: tier="WATCHLIST"
     else: tier="REJECT"
     return {"score":final_score,"base_score":round(base_score,1),"tier":tier,"components":components,
@@ -190,7 +192,11 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
         game_state=str(row.get("Game state") or _kickoff_state(row.get("Kickoff ISO"))["state"]).upper()
         live_market_prob=_v18_number(row.get("Market fair %"))
         ranking_prob=(live_market_prob/100.0) if game_state=="LIVE" and live_market_prob is not None and 0<live_market_prob<100 else (prob/100.0 if prob is not None else None)
-        if pick in ("HOME","AWAY") and price is not None and price>1.01 and ranking_prob is not None and 0<ranking_prob<1 and str(row.get("Market integrity",""))=="OK" and books>=min_books and game_state in ("UPCOMING","LIVE") and accepted:
+        # V21 probability-first rule: do not exclude a bettable favourite because
+        # it lacks positive EV, a +4pp edge, eight bookmakers, or perfect market
+        # agreement. Those are advisory diagnostics only. The hard gates are:
+        # exact fixture match, a valid current 1X2 price, and an actionable game.
+        if pick in ("HOME","AWAY") and price is not None and price>1.01 and ranking_prob is not None and 0<ranking_prob<1 and books>=1 and game_state in ("UPCOMING","LIVE") and accepted:
             candidates.append({"row":row,"audit":audit,"price":price,"probability":ranking_prob,
                                "probability_source":"live market fair" if game_state=="LIVE" and live_market_prob is not None else "pre-match model"})
     by_prob=sorted(candidates,key=lambda x:x["probability"],reverse=True)[:20]
@@ -221,7 +227,7 @@ def build_best_chance_acca(rows,target_odds=50.0,leg_counts=(5,6),min_books=3):
     return {"status":"READY" if ready else "BELOW_TARGET","legs":[x["row"] for x in combo],"combined_odds":round(combined,2),"joint_probability":round(joint*100,2),"target_odds":round(target,2),"reason":"Highest estimated joint success probability among combinations reaching the target." if ready else "No requested-size combination reaches the target with verified prices; this is the closest available return."}
 # --- END V18 ENGINE -------------------------------------------------------------
 
-st.set_page_config(page_title="Craig's Football Predictor V20 Street", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Craig's Football Predictor V21 Probability", page_icon="📈", layout="wide")
 
 
 
@@ -345,7 +351,7 @@ div[data-testid="stAlert"]{border-radius:14px;border-left-width:5px}
 .v14-nav .active{color:var(--green);font-weight:800}
 </style>
 <div class="v14-brand">
- <span class="v14-chip">V20 STREET</span>
+ <span class="v14-chip">V21 PROBABILITY</span>
  <div class="v14-brandline"><span class="v14-logo">📈</span>
  <div><div class="v14-title">Craig's Football <b>Predictor</b></div>
  <div class="v14-sub">Nitrous-inspired dashboard styling with evidence-backed football decisions. • Real market comparison</div></div></div>
@@ -382,7 +388,7 @@ div.stButton > button[kind="primary"] { background:linear-gradient(90deg,#18d977
 </style>
 <div class="brand">
   <div class="brand-icon">📈</div>
-  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V20 STREET</span></div>
+  <div><div class="brand-name">Craig's Football Predictor <span class="vbadge">V21 PROBABILITY</span></div>
   <div class="brand-sub">Data. Discipline. Evidence-backed decisions.</div></div>
 </div>
 <div class="hero"><div class="hero-title">🏆 Smarter football predictions</div>
@@ -437,7 +443,7 @@ hr{border-color:#173247!important}
 
 st.markdown("""
 <style>
-/* --- V20 STREET EDITION VISUAL LAYER --------------------------------------- */
+/* --- V21 PROBABILITY EDITION VISUAL LAYER --------------------------------------- */
 :root{
   --street-bg:#04070d; --street-panel:#0a1119; --street-panel2:#101924;
   --street-line:#243446; --street-text:#f4f8ff; --street-muted:#9db0c2;
@@ -484,7 +490,7 @@ st.markdown("""
 .v14-title b{color:#ffffff!important}
 .v14-sub{color:#c0cddd!important; max-width:640px}
 .v14-sub:after{
-  content:"Street tuned aesthetic • fast reads • verified markets only";
+  content:"Probability first • ranked strongest to weakest • verified current markets";
   display:block; margin-top:6px; color:#8fa7bc; font-size:.82rem; letter-spacing:.02em;
 }
 
@@ -1359,16 +1365,14 @@ else:
             st.session_state.pop("odds_key_override",None)
             st.rerun()
 
-st.subheader("⚙️ Performance tuning")
-st.caption("Default mode analyses Today automatically and shows the 10 strongest win calls. Tune only what you want, then run the engine.")
-pc1,pc2=st.columns(2)
-with pc1:
-    min_conf=st.number_input("Minimum confidence (%)",min_value=45,max_value=90,value=62,step=1)
-    min_edge=st.number_input("Minimum market edge (pp)",min_value=0,max_value=20,value=4,step=1)
-    min_books=st.number_input("Minimum bookmakers",min_value=3,max_value=25,value=8,step=1)
-with pc2:
-    max_edge=st.number_input("Manual verification above edge (pp)",min_value=8,max_value=30,value=15,step=1)
-    topn=st.number_input("Show top predictions",min_value=3,max_value=30,value=10,step=1)
+st.markdown("### 🏁 Probability-first mode")
+st.caption("Every currently bettable match in your chosen dates enters the ranking pool. No positive-EV gate and no +4pp edge gate. The app ranks the strongest win probabilities; you decide what to use.")
+# Compatibility values retained for older diagnostics only; they no longer gate the Top 10 or acca pool.
+min_conf=0
+min_edge=0
+min_books=1
+max_edge=100
+topn=10
 
 # V19.8 fixture picker: date changes stay local until GO is pressed.
 # This prevents the expensive football analysis from rerunning while the user
@@ -1388,7 +1392,7 @@ if "fixture_range_picker" not in st.session_state:
     )
 
 st.markdown("### 📅 Race window")
-st.caption("Choose a quick window or your own custom range. The engine only refreshes when you deliberately hit RUN.")
+st.caption("Choose the dates you want analysed, then press RUN. This same window feeds both the Top 10 ranking and the personalised acca builder.")
 _q1,_q2,_q3=st.columns(3)
 with _q1:
     if st.button("TODAY // RUN",use_container_width=True,key="fixtures_today_go"):
@@ -1440,7 +1444,7 @@ else:
     st.success(f"Active fixtures: {start_day.strftime('%a %d %b')} → {end_day.strftime('%a %d %b %Y')}")
 
 st.markdown("### 🎯 Target build bay")
-st.caption("Optional — the Top 10 still loads automatically. Use this bay when you want a tuned 5/6-team acca built around your stake and target.")
+st.caption("Optional — the Top 10 is always probability-ranked first. Use this only when you want the optimiser to find the highest-probability 5/6-team combination that can approach your stake/return target inside the SAME date window.")
 ac1,ac2,ac3=st.columns(3)
 with ac1:
     acca_stake=st.number_input("Stake (£)",min_value=1.0,max_value=10000.0,value=10.0,step=1.0,format="%.2f",key="acca_stake")
@@ -1626,7 +1630,12 @@ if True:
                       "elo_diff":elo[h]-elo[a],"elo_home":elo_p(elo[h]+55-elo[a])}
                 x=pd.DataFrame([[vals[k] for k in FEATURES]],columns=FEATURES)
                 pr=model.predict_proba(x)[0]
-                i=int(np.argmax(pr)); labels=["HOME","DRAW","AWAY"]; conf=float(pr[i])
+                # V21 ranks TEAMS most likely to win, not the most likely 1X2
+                # outcome. Every fixture therefore contributes its stronger team
+                # (home or away) even when DRAW is the single highest 1X2 outcome.
+                labels=["HOME","DRAW","AWAY"]
+                i=0 if float(pr[0]) >= float(pr[2]) else 2
+                conf=float(pr[i])
                 market,matchdiag=consensus_for(odds_events,h,a,match_day) if odds_events else (None,{"stage":"no-events","reason":"Odds endpoint returned zero current/live events for this league","trace":[],"rejected_books":[],"api": api_diag})
                 if isinstance(matchdiag,dict) and odds_key:
                     matchdiag.setdefault("api", api_diag)
@@ -1669,40 +1678,18 @@ if True:
                     ev=conf*best_odd-1
                 context = fixture_context(code, match_day, h, a)
                 secondary_checks=[]
-                # V16.5 decision hierarchy: establish whether this is a positive betting candidate,
-                # then automatically investigate unusually large edges instead of handing work to the user. VERIFY is reserved for otherwise-qualifying
-                # candidates whose market evidence needs manual checking.
-                if not market:
-                    decision="PREDICTION ONLY"
-                    decision_reason="No matched current market."
-                elif conf < min_conf/100:
-                    decision="PASS"
-                    decision_reason=f"Model confidence {conf*100:.1f}% is below the {min_conf:.0f}% threshold."
-                elif edge < min_edge/100:
-                    decision="PASS"
-                    decision_reason=f"Market edge {edge*100:.1f}pp is below the +{min_edge:.0f}pp threshold."
-                elif ev <= 0:
-                    decision="PASS"
-                    decision_reason=f"Model EV is not positive ({ev*100:.1f}%)."
-                elif market.get("integrity")!="OK":
-                    decision="VERIFY"
-                    decision_reason="Positive candidate, but bookmaker-price dispersion failed the market-integrity guard."
-                elif books < min_books:
-                    decision="VERIFY"
-                    decision_reason=f"Positive candidate, but only {books} bookmakers passed validation (minimum {min_books})."
-                elif edge > max_edge/100:
-                    decision, decision_reason, secondary_checks = secondary_auto_verify(
-                        market, i, conf, min_edge, validation_status, matchdiag, kickoff_iso
-                    )
-                elif not kickoff_iso:
-                    decision="VERIFY"
-                    decision_reason="Positive candidate, but the matched market has no verified kickoff timestamp."
-                elif matchdiag.get("stage")!="accepted":
-                    decision="VERIFY"
-                    decision_reason="Positive candidate, but the fixture/market audit did not finish in the accepted state."
+                # V21 probability-first hierarchy. EV and model-vs-market edge are
+                # calculated for reference but NEVER exclude a team from the ranking.
+                # A row reaches this point only after a current market has been matched.
+                decision="RANKED"
+                if market.get("integrity")!="OK":
+                    decision_reason="Ranked by win probability. Current bookmaker prices are more dispersed than usual, so compare the live price before using it."
+                    secondary_checks.append("Market-price dispersion warning")
+                elif books < 3:
+                    decision_reason=f"Ranked by win probability. Current price is verified, but the market sample is limited ({books} bookmaker{'s' if books!=1 else ''})."
+                    secondary_checks.append("Limited bookmaker sample")
                 else:
-                    decision="BET"
-                    decision_reason="AUTO VERIFIED — unique fixture, named 1X2 market, kickoff, confidence, edge, positive EV, bookmaker depth and market integrity all passed."
+                    decision_reason=f"Ranked by win probability with a verified current market from {books} bookmaker{'s' if books!=1 else ''}."
                 if timing["state"]=="LIVE":
                     decision_reason=("LIVE / TIME-SENSITIVE — "+decision_reason+" The displayed price is the current odds snapshot, "
                                      "but the model evidence is pre-match and the current score is not ingested. Check the live score and price immediately before placing anything.")
@@ -1790,7 +1777,6 @@ if True:
     def _pick_reason(r):
         conf=_num(r,"Confidence %",0)
         ctx=_context_signal(r); market=_market_signal(r)
-        if r.get("Decision")=="BET": return "Model and verified price clear the value rules."
         if conf>=68 and market=="➖": return "Strong model prediction; current bookmaker odds are not verified."
         if conf>=68 and ctx=="⚠️": return "Strong model prediction, but recent context adds caution."
         if conf>=68: return "One of the strongest model win predictions in this fixture window."
@@ -1802,7 +1788,7 @@ if True:
         c1.metric("Home",f'{r["Home %"]:.0f}%'); c2.metric("Draw",f'{r["Draw %"]:.0f}%'); c3.metric("Away",f'{r["Away %"]:.0f}%')
         st.markdown(f'**Model:** {r.get("Model engine","—")}  ·  **Validation:** {r.get("Validation","—")}')
         if pd.notna(r.get("Market fair %")):
-            st.write(f'Bookmaker market: {r.get("Market fair %"):.0f}% • Edge: {r.get("Edge pp"):+.1f}pp • EV: {r.get("EV %"):+.1f}% • {int(r.get("Bookmakers",0))} bookmakers')
+            st.write(f'Bookmaker market probability: {r.get("Market fair %"):.0f}% • {int(r.get("Bookmakers",0))} bookmaker(s) in the current sample')
             st.write(f'Consensus odds: **{decimal_to_fractional(r.get("Market odds"))}** • Best verified: **{decimal_to_fractional(r.get("Best market odds"))}**')
         else:
             st.write("Current bookmaker odds were not securely matched, so value/EV is not claimed.")
@@ -1818,18 +1804,18 @@ if True:
         st.markdown("**V18 evidence audit**")
         a1,a2,a3=st.columns(3)
         a1.metric("Evidence score",f'{audit["score"]:.0f}/100')
-        a2.metric("Tier",audit["tier"])
+        a2.metric("Evidence tier*",audit["tier"])
         a3.metric("Risk penalties",f'{audit["penalty_total"]:.0f}')
         component_labels={"model_probability":"Model probability","goals_profile":"Scoring profile*","recent_venue_form":"Recent + venue form","market_value":"Verified market value","availability_evidence":"Availability evidence","opponent_strength":"Opponent strength","supporting_indicators":"Supporting indicators"}
         component_rows=[{"Evidence component":component_labels[k],"Weight":f"{w}%","Component score":audit["components"][k]} for k,w in WEIGHTS.items()]
         st.dataframe(pd.DataFrame(component_rows),hide_index=True,use_container_width=True)
-        st.caption("*Scoring-rate proxy from completed-match goals; it is not provider-supplied xG.")
+        st.caption("*Evidence tier is advisory only in V21 and never blocks a team from the probability ranking. Scoring profile is a goals-rate proxy, not provider-supplied xG.")
         if audit.get("positives"): st.success("Supports pick: "+" • ".join(audit["positives"]))
         if audit.get("concerns"): st.warning("Concerns: "+" • ".join(audit["concerns"]))
         if audit.get("penalties"): st.caption("Risk penalties: "+" • ".join(f'-{p["points"]} {p["reason"]}' for p in audit["penalties"]))
         st.caption(r.get("Decision reason", ""))
 
-    # V17.1 THREE-LENS DASHBOARD — three simple questions, detail only on demand.
+    # V21 PROBABILITY DASHBOARD — one clear question: who is most likely to win?
     def _context_signal_v171(r):
         ctx=r.get("Context")
         if not isinstance(ctx,dict) or not ctx.get("available"): return "➖"
@@ -1859,8 +1845,8 @@ if True:
 
     def _clean_reason(r,lens):
         ctx=_context_signal_v171(r); market=_market_signal(r)
-        if lens=="both": return "High win probability and the verified price also passes the value rules."
-        if lens=="value": return "Verified bookmaker price clears the model's value, edge and EV rules."
+        if _num(r,"Draw %",0) > _num(r,"Confidence %",0):
+            return "Highest team win probability in this fixture, although the draw is modelled as the single most likely 1X2 outcome."
         if market=="➖": return "One of the model's strongest win probabilities; bookmaker odds are not verified."
         if ctx=="⚠️": return "Strong win probability, although recent match context adds caution."
         if ctx=="✅": return "Strong win probability and recent match context supports the selection."
@@ -1887,12 +1873,12 @@ if True:
         return {"legs":part,"total_odds":float(result["combined_odds"]),"joint_prob":float(result["joint_probability"])/100.0,"return":float(stake)*float(result["combined_odds"]),"target_odds":target_odds,"status":"TARGET REACHED" if result["status"]=="READY" else "TARGET NOT REACHABLE"},None
 
     # Actionable frame only: upcoming or recently started LIVE fixtures with a
-    # verified current market. Everything else has already been silently removed.
+    # verified current market. No EV/edge threshold is applied here.
     _bettable_now=d[d["Game state"].isin(["UPCOMING","LIVE"])].copy()
 
     if build_acca_requested:
         st.markdown("### 🧠 Most-probable personalised acca")
-        st.caption("The optimiser searches verified 5/6-team combinations and chooses the highest-probability route to your target. Recently started matches may be included only while a current verified market is still available, and are marked LIVE.")
+        st.caption("The optimiser searches the full currently bettable pool in this date window. It does NOT require positive EV or a +4pp edge; it prioritises the highest estimated win probabilities while trying to reach your target. LIVE matches remain clearly marked.")
         _acca,_acca_err=_build_goal_acca(_bettable_now,acca_legs_choice,float(acca_stake),float(acca_target))
         if _acca_err:
             st.warning(_acca_err["reason"])
@@ -1924,22 +1910,18 @@ if True:
     .v171-badges{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0 8px}.v171-badge{border:1px solid #28465d;border-radius:999px;padding:4px 8px;font-size:.72rem;font-weight:850;color:#cbd9e5}.v171-good{border-color:#1f7d55;color:#65efaa}.v171-hot{border-color:#8b6d18;color:#ffd66d}.v171-reason{font-size:.86rem;color:#c5d3df;line-height:1.4}.v171-empty{border:1px dashed #28465d;border-radius:16px;padding:14px;color:#91a8bc;margin-bottom:8px}
     @media(max-width:520px){.v171-card{padding:13px 14px}.v171-team{font-size:1.12rem}.v171-prob{font-size:1.42rem}}
     </style>
-    <div class="v171-head"><h2>Top selections</h2><p>Probability-ranked picks for the selected fixture window. Tap a match only when you want the full analysis.</p></div>
+    <div class="v171-head"><h2>Top 10 strongest teams</h2><p>Every currently bettable outright winner in the selected dates is ranked by win probability. No EV or edge filter. You choose what goes into your bet.</p></div>
     """,unsafe_allow_html=True)
 
     # Recommendations include UPCOMING plus clearly marked recent LIVE games.
     # Live rows use current market fair probability for ordering when available.
     _active=_bettable_now.copy()
-    likely=_active[_active["Pick"].isin(["HOME","AWAY"])].sort_values("Ranking %",ascending=False).head(int(topn))
-    value=_active[_active["Decision"].eq("BET")].copy()
-    if not value.empty:
-        value["_vscore"]=pd.to_numeric(value["Edge pp"],errors="coerce").fillna(0)+0.15*pd.to_numeric(value["EV %"],errors="coerce").fillna(0)
-        value=value.sort_values(["_vscore","Confidence %"],ascending=False).head(5)
-    both=_active[(_active["Decision"].eq("BET")) & (_active["Confidence %"].ge(68.0)) & _active["Pick"].isin(["HOME","AWAY"])].sort_values("Confidence %",ascending=False).head(5)
+    likely=_active[_active["Pick"].isin(["HOME","AWAY"])].sort_values("Ranking %",ascending=False).head(10)
+    strongest_five=likely.head(5).copy()
 
     def _render_clean_rows(frame,lens):
         if frame.empty:
-            msg={"likely":"No win selections available.","value":"No verified value bets in this fixture window — the app has not lowered the rules to create activity.","both":"No selection currently has both 68%+ win probability and verified value."}[lens]
+            msg="No currently bettable win selections are available in this fixture window."
             st.markdown('<div class="v171-empty">'+html.escape(msg)+'</div>',unsafe_allow_html=True); return
         for pos,(_,r) in enumerate(frame.iterrows(),1):
             team=_team_for_pick(r); conf=_num(r,"Confidence %",0); price=_price_for(r); ctx=_context_signal_v171(r); market=_market_signal(r); val=_validation_word(r)
@@ -1948,31 +1930,40 @@ if True:
             display_prob=_num(r,"Ranking %",conf); prob_label="live market fair" if is_live and pd.notna(r.get("Market fair %")) else "model chance"
             live_badge=('<span class="v171-badge v171-hot">🔴 '+html.escape(str(r.get("Timing label","LIVE")))+'</span>') if is_live else ''
             odds_badge='<span class="v171-badge">Odds '+html.escape(price)+'</span>' if price!="—" else '<span class="v171-badge">Odds not verified</span>'
-            main_badge='<span class="v171-badge v171-good">VALUE</span>' if r.get("Decision")=="BET" else '<span class="v171-badge">WIN PICK</span>'
-            if lens=="both": main_badge='<span class="v171-badge v171-hot">WIN + VALUE</span>'
-            tier_class='v171-good' if audit["tier"]=="ELITE" else 'v171-hot' if audit["tier"]=="STRONG" else ''
-            main_badge=live_badge+f'<span class="v171-badge {tier_class}">{html.escape(audit["tier"])}</span><span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'+main_badge
+            main_badge='<span class="v171-badge v171-good">RANKED WIN PICK</span>'
+            draw_badge='<span class="v171-badge v171-hot">DRAW THREAT</span>' if _num(r,"Draw %",0) > _num(r,"Confidence %",0) else ''
+            main_badge=live_badge+draw_badge+f'<span class="v171-badge">Evidence {audit["score"]:.0f}/100</span>'+main_badge
             reason=_clean_reason(r,lens)
             if is_live: reason="TIME-SENSITIVE: match already started. Check the live score and current price immediately. "+reason
             card=('<div class="v171-card"><div class="v171-top"><div><div class="v171-team">'+str(pos)+'. '+html.escape(team)+'</div><div class="v171-pick">'+html.escape(str(r["Pick"]))+' • '+html.escape(str(r.get("League","")))+'</div></div><div class="v171-prob">'+f'{display_prob:.0f}'+'%<small>'+html.escape(prob_label)+'</small></div></div><div class="v171-badges">'+main_badge+odds_badge+'<span class="v171-badge">Model '+html.escape(val)+'</span><span class="v171-badge">Market '+market+'</span><span class="v171-badge">Context '+ctx+'</span></div><div class="v171-reason">'+html.escape(reason)+'</div></div>')
             st.markdown(card,unsafe_allow_html=True)
             with st.expander("See full analysis",expanded=False): _detail_panel(r)
 
-    st.markdown('<div class="v171-lens">🏆 Most likely winners</div>',unsafe_allow_html=True)
-    st.caption(f"Top {int(topn)} win probabilities. Upcoming matches use the model; LIVE matches use current market fair probability when available and are clearly time-stamped."); _render_clean_rows(likely,"likely")
-    st.markdown('<div class="v171-lens">💰 Best value bets</div>',unsafe_allow_html=True)
-    st.caption("Only selections that pass the existing bookmaker, edge, EV and verification rules."); _render_clean_rows(value,"value")
-    st.markdown('<div class="v171-lens">🔥 Win chance + value</div>',unsafe_allow_html=True)
-    st.caption("The overlap: 68%+ predicted win probability and a verified value price."); _render_clean_rows(both,"both")
+    st.markdown('<div class="v171-lens">⚡ Strongest five at a glance</div>',unsafe_allow_html=True)
+    st.caption("These are simply ranks 1–5 from the probability table — not forced value bets. They are the first five to inspect if you want a five-team acca, and you remain free to swap any leg.")
+    if not strongest_five.empty:
+        _five=strongest_five[["Match date","League","Match","Pick","Ranking %","Best market odds","Game state","Timing label"]].copy()
+        _five["Selection"]=strongest_five.apply(_team_for_pick,axis=1)
+        _five["Current odds"]=_five["Best market odds"].apply(decimal_to_fractional)
+        _five["Status"]=np.where(_five["Game state"].eq("LIVE"),"🔴 "+_five["Timing label"].astype(str),"Upcoming")
+        _five=_five[["Match date","League","Selection","Ranking %","Current odds","Status"]]
+        _five=_five.rename(columns={"Ranking %":"Win probability %"})
+        st.dataframe(_five,hide_index=True,use_container_width=True)
+    else:
+        st.info("No currently bettable outright winners are available in this window.")
 
-    with st.expander(f"All other matches ({len(d)})",expanded=False):
+    st.markdown('<div class="v171-lens">🏆 Full Top 10 ranking</div>',unsafe_allow_html=True)
+    st.caption("Ranked strongest to weakest across every currently bettable outright winner in the selected dates. Upcoming matches use the model; LIVE matches use current market fair probability when available.")
+    _render_clean_rows(likely,"likely")
+
+    with st.expander(f"All currently bettable matches ({len(d)})",expanded=False):
         for _,r in d.sort_values("Confidence %",ascending=False).iterrows():
             team=_team_for_pick(r)
             _state_prefix="🔴 LIVE • " if str(r.get("Game state",""))=="LIVE" else ""
-            with st.expander(f'{_state_prefix}{team} • {r["Pick"]} • {r["Confidence %"]:.0f}% • {r["Decision"]}',expanded=False): _detail_panel(r)
+            with st.expander(f'{_state_prefix}{team} • {r["Pick"]} • {r["Ranking %"]:.0f}% win probability',expanded=False): _detail_panel(r)
     with st.expander("📈 Model performance & validation",expanded=False): _tracker_panel()
     if quota_remaining is not None: st.caption(f"Odds API credits remaining: {quota_remaining}")
-    if not odds_key: st.warning("No current-odds key is connected, so value classifications remain disabled.")
+    if not odds_key: st.warning("No current-odds key is connected, so current bettable-market verification is unavailable.")
 st.divider()
-st.caption("V19.8 shows only fixtures with a current verified market. Recently started matches can remain while the market is still available and are clearly labelled LIVE and time-sensitive.")
+st.caption("V21 Probability mode: finished/closed fixtures stay hidden. Every current matched 1X2 market in the selected date window can enter the ranking; EV and model-vs-market edge are diagnostics only, never exclusion gates.")
 
