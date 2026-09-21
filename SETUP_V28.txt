@@ -1,0 +1,18 @@
+V28 SETUP
+
+1. Replace your current app.py with V28 app.py.
+2. Keep the two Streamlit Secrets already configured:
+   ODDS_API_KEY = "..."
+   API_FOOTBALL_KEY = "..."
+3. Reboot the Streamlit app once.
+4. Leave Admin / Model Lab OFF for normal use.
+5. Choose ALL ANALYSABLE FIXTURES and a short date window.
+6. Watch System health:
+   - API-Football starts as CONNECTED / UNTESTED.
+   - After a successful provider response it changes to VERIFIED.
+   - Daily/minute quota appears when API-Football returns those headers.
+7. Treat only `FINAL` anchors as having completed the full verified pass.
+8. If Late info says REVALIDATE NOW, rerun close to kickoff.
+9. Export both the validation ledger and Anchor History periodically.
+
+No new API key is required.
