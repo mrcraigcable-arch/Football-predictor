@@ -3518,11 +3518,11 @@ if True:
             code=meta["of"]
             odds_events=[]
             api_diag={}  # reset per league; never reuse diagnostics from a previous league
+            matches=[]
             try:
                 matches=fixtures_for(code)
             except Exception as e:
                 warnings.append(f"{lname}: fixture feed unavailable ({e})")
-                continue
             games=[]
             for _m in matches:
                 try:
@@ -3531,8 +3531,6 @@ if True:
                     continue
                 if start_day <= _match_day <= end_day:
                     games.append((_m,_match_day))
-            if not games: continue
-
             if odds_key:
                 try:
                     odds_events,api_diag=odds_fetch(odds_key,meta["odds"])
@@ -3551,6 +3549,28 @@ if True:
                     diagnostics.append({"League":lname,"Sport key":meta["odds"],
                                         "API events returned":0,"Credits used":"","Credits remaining":"",
                                         "Status":f"ERROR: {e}"})
+
+            # The odds endpoint is also an independent, current fixture source.
+            # This keeps tonight's slate usable when a season JSON feed is missing
+            # or when API-Football returns an empty fixture window.  The event still
+            # goes through the normal exact-team/date market matcher and model path.
+            if not games and odds_events:
+                for ev in odds_events:
+                    event_day=_event_date_utc(ev)
+                    if event_day is None or not (start_day <= event_day <= end_day):
+                        continue
+                    home=str(ev.get("home_team") or "").strip()
+                    away=str(ev.get("away_team") or "").strip()
+                    if not home or not away:
+                        continue
+                    games.append(({
+                        "date":event_day.isoformat(),
+                        "team1":home,
+                        "team2":away,
+                        "_fixture_source":"The Odds API",
+                        "_commence_time":ev.get("commence_time"),
+                    },event_day))
+            if not games: continue
 
             try:
                 if st.session_state.get("v24_deep_requested",False):
@@ -3606,7 +3626,7 @@ if True:
                 # 2) uniquely matched event trace
                 # 3) OpenFootball scheduled date/time
                 _provider_kickoff=((_pfx.get("fixture") or {}).get("date") if _pfx is not None else None)
-                kickoff_iso=_provider_kickoff or (market.get("event",{}).get("commence_time") if market else None) or matched_kickoff_from_diag(matchdiag) or fixture_kickoff_iso(g)
+                kickoff_iso=_provider_kickoff or (market.get("event",{}).get("commence_time") if market else None) or matched_kickoff_from_diag(matchdiag) or g.get("_commence_time") or fixture_kickoff_iso(g)
                 kickoff_dt,kickoff_label=kickoff_uk_from_iso(kickoff_iso)
                 timing=_kickoff_state(kickoff_iso)
 
@@ -3687,7 +3707,7 @@ if True:
                             "Provider season":((_pfx.get("league") or {}).get("season") if _pfx is not None else football_season_year_for_date(match_day)),
                             "Provider home team ID":(((_pfx.get("teams") or {}).get("home") or {}).get("id") if _pfx is not None else None),
                             "Provider away team ID":(((_pfx.get("teams") or {}).get("away") or {}).get("id") if _pfx is not None else None),
-                            "Fixture source":"OpenFootball + API-Football status cross-check" if _pfx is not None else "OpenFootball"})
+                            "Fixture source":"OpenFootball + API-Football status cross-check" if _pfx is not None else g.get("_fixture_source","OpenFootball")})
             _partial_status.caption(f"Found {len(out)} ranked fixture candidate(s) so far.")
 
     # V26: API-Football becomes the discovery layer for competitions outside the

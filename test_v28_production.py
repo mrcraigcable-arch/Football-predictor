@@ -119,9 +119,14 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn('Provider fixture ID', SOURCE)
         self.assertIn('"fixtures",{"id":int(float(pfid))}', SOURCE)
 
-    def test_lazy_odds_api_contract(self):
-        self.assertIn("if not games: continue", SOURCE)
-        self.assertLess(SOURCE.index("if not games: continue"), SOURCE.index("odds_fetch(odds_key", SOURCE.index("if not games: continue")))
+    def test_odds_feed_can_discover_fixtures(self):
+        odds_call=SOURCE.index("odds_fetch(odds_key")
+        fallback=SOURCE.index("if not games and odds_events",odds_call)
+        final_skip=SOURCE.index("if not games: continue",fallback)
+        self.assertLess(odds_call,fallback)
+        self.assertLess(fallback,final_skip)
+        self.assertIn('"_fixture_source":"The Odds API"',SOURCE)
+        self.assertIn('g.get("_commence_time")',SOURCE)
 
     def test_pandas_empty_frame_hardening(self):
         self.assertIn("if led.empty:", SOURCE)
