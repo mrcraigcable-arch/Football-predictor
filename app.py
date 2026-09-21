@@ -4046,6 +4046,7 @@ if True:
         st.caption(r.get("Decision reason", ""))
         if r.get("Fixture source"):
             st.caption(f'Data source: {r.get("Fixture source")} • Probability engine: {r.get("Model engine")}')
+        st.caption(f'Provider verification: {r.get("External data status","Not attempted")}')
         case=r.get("Analyst case") if isinstance(r.get("Analyst case"),dict) else _analyst_case(r)
         st.markdown("**V26 analyst case**")
         x1,x2,x3=st.columns(3)

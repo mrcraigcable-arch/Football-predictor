@@ -150,6 +150,9 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("provider_fixture_id=int(raw_fixture_id) if pd.notna(raw_fixture_id) else None",body)
         self.assertIn("if provider_fixture_id is not None and lid:",body)
 
+    def test_provider_verification_detail_is_visible(self):
+        self.assertIn("Provider verification:",SOURCE)
+
 
 class PureFunctionTests(unittest.TestCase):
     @classmethod
