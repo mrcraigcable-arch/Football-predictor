@@ -137,6 +137,11 @@ class ProductionContractTests(unittest.TestCase):
         start=SOURCE.index(marker)
         self.assertIn("@st.cache_resource",SOURCE[max(0,start-100):start])
 
+    def test_market_blender_is_defined_before_diagnostics(self):
+        assigned=SOURCE.index("d,market_blend_meta=_apply_market_blender(d)")
+        rendered=SOURCE.index("st.json(market_blend_meta)")
+        self.assertLess(assigned,rendered)
+
 
 class PureFunctionTests(unittest.TestCase):
     @classmethod

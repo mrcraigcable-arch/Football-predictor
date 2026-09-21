@@ -3807,6 +3807,12 @@ if True:
     d["Tier"]=[audit["tier"] for audit in d["V18 audit"]]
     d["Ranking %"]=pd.to_numeric(d["Confidence %"],errors="coerce")
 
+    _live_mask=d["Game state"].eq("LIVE") & pd.to_numeric(d["Market fair %"],errors="coerce").notna()
+    d.loc[_live_mask,"Ranking %"]=pd.to_numeric(d.loc[_live_mask,"Market fair %"],errors="coerce")
+    # Calculate this before rendering engine diagnostics, which displays the
+    # blender audit even when no learned blender has yet been promoted.
+    d,market_blend_meta=_apply_market_blender(d)
+
     if engine_diagnostics:
         with st.expander("🧪 V26 engine stress test — chronological unseen matches",expanded=False):
             st.caption("Fast mode returns predictions immediately. When you run Deep Validation, the selected leagues use TRAIN → TUNE/CALIBRATE → untouched FINAL TEST and cache the approved result for the rest of the session.")
@@ -3829,12 +3835,6 @@ if True:
                         st.json(_sf)
             st.caption("Market-consensus blending is learned separately from settled live-ledger results and is promoted only after beating model-only probabilities on a chronological holdout.")
             st.json(market_blend_meta)
-    _live_mask=d["Game state"].eq("LIVE") & pd.to_numeric(d["Market fair %"],errors="coerce").notna()
-    d.loc[_live_mask,"Ranking %"]=pd.to_numeric(d.loc[_live_mask,"Market fair %"],errors="coerce")
-    # If enough settled history exists, learn the model/market relationship from
-    # our own results and use it only after it beats model-only probabilities on
-    # a chronological holdout. No arbitrary 70/30 market weighting.
-    d,market_blend_meta=_apply_market_blender(d)
     _settle_ledger()
     d=_apply_competition_trust(_apply_analyst_engine(d))
 
