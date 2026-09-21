@@ -142,6 +142,14 @@ class ProductionContractTests(unittest.TestCase):
         rendered=SOURCE.index("st.json(market_blend_meta)")
         self.assertLess(assigned,rendered)
 
+    def test_missing_provider_fixture_id_is_not_treated_as_truthy_nan(self):
+        start=SOURCE.index("def _deep_fixture_analysis")
+        end=SOURCE.index("ODDS_BASE=",start)
+        body=SOURCE[start:end]
+        self.assertIn('pd.to_numeric(row.get("Provider fixture ID"),errors="coerce")',body)
+        self.assertIn("provider_fixture_id=int(raw_fixture_id) if pd.notna(raw_fixture_id) else None",body)
+        self.assertIn("if provider_fixture_id is not None and lid:",body)
+
 
 class PureFunctionTests(unittest.TestCase):
     @classmethod

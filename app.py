@@ -2006,10 +2006,16 @@ def _row_kickoff_or_date(row):
 
 def _deep_fixture_analysis(row, api_key, include_xg=False, include_lineup_core=False, full_context=True):
     lname=str(row.get("League",""))
-    lid=row.get("Provider league ID") or API_FOOTBALL_LEAGUES.get(lname)
-    season_year=int(row.get("Provider season") or football_season_year_for_date(row.get("Match date")))
-    provider_fixture_id=row.get("Provider fixture ID")
-    if provider_fixture_id and lid:
+    # DataFrame rows convert missing numeric IDs from None to NaN.  NaN is
+    # truthy in Python, so an unguarded `if provider_fixture_id` can reach
+    # int(NaN) and turn a normal provider miss into a verification exception.
+    raw_lid=pd.to_numeric(row.get("Provider league ID"),errors="coerce")
+    lid=int(raw_lid) if pd.notna(raw_lid) else API_FOOTBALL_LEAGUES.get(lname)
+    raw_season=pd.to_numeric(row.get("Provider season"),errors="coerce")
+    season_year=int(raw_season) if pd.notna(raw_season) else football_season_year_for_date(row.get("Match date"))
+    raw_fixture_id=pd.to_numeric(row.get("Provider fixture ID"),errors="coerce")
+    provider_fixture_id=int(raw_fixture_id) if pd.notna(raw_fixture_id) else None
+    if provider_fixture_id is not None and lid:
         cov=api_football_coverage(lname,api_key,lid,season_year)
         injuries=_api_football_get("injuries",{"fixture":int(provider_fixture_id)},api_key) if cov.get("injuries") else []
         lineups=_api_football_get("fixtures/lineups",{"fixture":int(provider_fixture_id)},api_key) if cov.get("lineups") else []
