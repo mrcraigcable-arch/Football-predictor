@@ -1355,6 +1355,18 @@ def _update_api_state_from_headers(headers,status,path,error=""):
 def _api_budget_guard(reserve_daily=12,reserve_minute=1):
     stx=_v28_api_state()
     dr=stx.get("daily_remaining"); mr=stx.get("minute_remaining")
+    # Minute headers describe the provider's rolling/current minute, not a
+    # permanent account state.  If the last successful response is older than
+    # one minute, allow one fresh request so new headers can be received.  Without
+    # this expiry a remembered value at the reserve becomes a self-locking state:
+    # no request is made, therefore the reset header can never arrive.
+    last_ok=pd.to_datetime(stx.get("last_ok_utc"),utc=True,errors="coerce")
+    if mr is not None and pd.notna(last_ok):
+        age=(pd.Timestamp.now(tz="UTC")-last_ok).total_seconds()
+        if age>=60:
+            stx["minute_remaining"]=None
+            stx["minute_limit"]=None
+            mr=None
     if dr is not None and dr <= int(reserve_daily):
         raise ApiBudgetDeferred(f"API-Football daily reserve reached ({dr} remaining).")
     if mr is not None and mr <= int(reserve_minute):

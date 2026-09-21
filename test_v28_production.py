@@ -98,6 +98,10 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("daily reserve reached", SOURCE)
         self.assertIn("minute reserve reached", SOURCE)
 
+    def test_minute_quota_state_expires(self):
+        self.assertIn('if age>=60:', SOURCE)
+        self.assertIn('stx["minute_remaining"]=None', SOURCE)
+
     def test_api_429_handling_present(self):
         self.assertIn("r.status_code==429", SOURCE)
         self.assertIn("Retry-After", SOURCE)
