@@ -153,6 +153,10 @@ class ProductionContractTests(unittest.TestCase):
     def test_provider_verification_detail_is_visible(self):
         self.assertIn("Provider verification:",SOURCE)
 
+    def test_provider_plan_season_gap_degrades_without_error(self):
+        self.assertIn('"do not have access to this season" in message.casefold()',SOURCE)
+        self.assertIn('"PROVISIONAL — provider season not covered"',SOURCE)
+
 
 class PureFunctionTests(unittest.TestCase):
     @classmethod

@@ -2044,8 +2044,14 @@ def _deep_fixture_analysis(row, api_key, include_xg=False, include_lineup_core=F
              "injuries":{"home":home_inj,"away":away_inj},"confirmed_lineup":confirmed,"confirmed_bench":benches,
              "lineups_confirmed":bool(confirmed["home"] and confirmed["away"]),"coverage":cov}
     else:
-        ext=api_football_fixture_context(lname,row.get("Match date"),row.get("Home team"),row.get("Away team"),api_key,
-                                         league_id=lid,season_year=season_year)
+        try:
+            ext=api_football_fixture_context(lname,row.get("Match date"),row.get("Home team"),row.get("Away team"),api_key,
+                                             league_id=lid,season_year=season_year)
+        except RuntimeError as e:
+            message=str(e)
+            if "do not have access to this season" in message.casefold():
+                return {"available":False,"reason":"PROVIDER PLAN — current season not covered; model and live market remain available"}
+            raise
     if not ext.get("available"): return {"available":False,"reason":ext.get("reason","Provider fixture unavailable")}
     ctx=row.get("Context") if isinstance(row.get("Context"),dict) else {}
     hp=((ctx.get("home") or {}).get("played")) or 0; ap=((ctx.get("away") or {}).get("played")) or 0
@@ -3947,6 +3953,8 @@ if True:
             return "PROVISIONAL — API budget/rate limit"
         if ext.startswith("FULL VERIFY ERROR"):
             return "PROVISIONAL — full verification error"
+        if ext.startswith("PROVIDER PLAN"):
+            return "PROVISIONAL — provider season not covered"
         if late=="REVALIDATE NOW" and not ((r.get("Context") or {}).get("lineups_confirmed") if isinstance(r.get("Context"),dict) else False):
             return "PROVISIONAL — lineup recheck due"
         if stability=="LOW":
