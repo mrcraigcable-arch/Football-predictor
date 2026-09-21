@@ -84,6 +84,15 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("def _api_football_get_all", SOURCE)
         self.assertIn("safe cap is {max_pages}", SOURCE)
 
+    def test_empty_broad_fixture_response_triggers_daily_fallback(self):
+        self.assertIn("if broad:", SOURCE)
+        self.assertIn('{"date":dt.date().isoformat(),"timezone":"Europe/London"}', SOURCE)
+        self.assertIn("if days<=8:", SOURCE)
+
+    def test_targeted_fixture_fallback_includes_core_efl(self):
+        self.assertIn('"Premier League":39,"Championship":40,"League One":41,"League Two":42', SOURCE)
+        self.assertIn("**V28_PRIORITY_EXPANDED_COMPETITIONS", SOURCE)
+
     def test_api_quota_guard_present(self):
         self.assertIn("def _api_budget_guard", SOURCE)
         self.assertIn("daily reserve reached", SOURCE)

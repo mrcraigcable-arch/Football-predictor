@@ -2172,29 +2172,74 @@ V28_PRIORITY_EXPANDED_COMPETITIONS={
 
 @st.cache_data(ttl=900,show_spinner=False)
 def api_football_fixture_range(start_iso, end_iso, api_key):
-    """Discover the broad window, but fail over to priority competitions if global paging is too large."""
+    """Discover a fixture window with two bounded fallbacks.
+
+    Some API-Football plans return HTTP 200 plus an empty response for a broad
+    ``from``/``to`` request even though the date endpoint contains fixtures.
+    Treat that as an unusable discovery response, not as proof that no football
+    exists.  A short window is retried one date at a time (one request per day,
+    maximum eight) before the existing priority-competition fallback runs.
+    """
     if not api_key: return []
     params={"from":str(start_iso),"to":str(end_iso),"timezone":"Europe/London"}
+    broad_error=None
     try:
-        return _api_football_get_all("fixtures",params,api_key,max_pages=12)
+        broad=_api_football_get_all("fixtures",params,api_key,max_pages=12)
+        if broad:
+            return broad
     except ApiBudgetDeferred:
         raise
-    except Exception:
-        # A global world-football range can be too heavily paginated. In that
-        # case preserve the product's most valuable expanded competitions rather
-        # than silently returning only page 1.
-        season=football_season_year_for_date(start_iso)
-        out=[]
-        for name,lid in V28_PRIORITY_EXPANDED_COMPETITIONS.items():
-            try:
-                _api_budget_guard(reserve_daily=12,reserve_minute=1)
-                q={"league":int(lid),"season":int(season),"from":str(start_iso),"to":str(end_iso),"timezone":"Europe/London"}
-                out.extend(_api_football_get_all("fixtures",q,api_key,max_pages=4))
-            except ApiBudgetDeferred:
-                break
-            except Exception:
-                continue
-        return out
+    except Exception as e:
+        broad_error=e
+
+    start=pd.to_datetime(start_iso,errors="coerce")
+    end=pd.to_datetime(end_iso,errors="coerce")
+    if pd.notna(start) and pd.notna(end):
+        days=max(0,int((end.normalize()-start.normalize()).days))+1
+        if days<=8:
+            daily=[]; seen=set()
+            for dt in pd.date_range(start.normalize(),end.normalize(),freq="D"):
+                try:
+                    _api_budget_guard(reserve_daily=12,reserve_minute=1)
+                    rows=_api_football_get_all("fixtures",{"date":dt.date().isoformat(),"timezone":"Europe/London"},api_key,max_pages=12)
+                    for fx in rows:
+                        fid=(fx.get("fixture") or {}).get("id") if isinstance(fx,dict) else None
+                        key=("id",fid) if fid is not None else ("row",repr(fx))
+                        if key not in seen:
+                            seen.add(key); daily.append(fx)
+                except ApiBudgetDeferred:
+                    break
+                except Exception:
+                    continue
+            if daily:
+                return daily
+
+    # A world-football range can be empty, unsupported or too heavily paginated.
+    # Preserve the most valuable expanded competitions rather than silently
+    # returning no fixtures or only page 1.
+    season=football_season_year_for_date(start_iso)
+    out=[]; seen=set()
+    priority={
+        "Premier League":39,"Championship":40,"League One":41,"League Two":42,
+        **V28_PRIORITY_EXPANDED_COMPETITIONS,
+    }
+    for name,lid in priority.items():
+        try:
+            _api_budget_guard(reserve_daily=12,reserve_minute=1)
+            q={"league":int(lid),"season":int(season),"from":str(start_iso),"to":str(end_iso),"timezone":"Europe/London"}
+            rows=_api_football_get_all("fixtures",q,api_key,max_pages=4)
+            for fx in rows:
+                fid=(fx.get("fixture") or {}).get("id") if isinstance(fx,dict) else None
+                key=("id",fid) if fid is not None else ("row",repr(fx))
+                if key not in seen:
+                    seen.add(key); out.append(fx)
+        except ApiBudgetDeferred:
+            break
+        except Exception:
+            continue
+    if not out and broad_error is not None:
+        raise RuntimeError(f"Broad and targeted fixture discovery failed: {broad_error}")
+    return out
 
 def _provider_fixture_state(fx):
     stx=((fx.get("fixture") or {}).get("status") or {})
@@ -4187,4 +4232,3 @@ with st.expander("🔌 Advanced data providers",expanded=False):
 
 st.divider()
 st.caption("V28 Hardened Production: holdout-audited no-fit scoring, strict FULL verification, adaptive rate/quota handling, provider settlement, Bayesian trust and superseded-recommendation control. No model can guarantee a result.")
-
