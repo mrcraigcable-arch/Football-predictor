@@ -102,6 +102,12 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn('if age>=60:', SOURCE)
         self.assertIn('stx["minute_remaining"]=None', SOURCE)
 
+    def test_cached_headers_do_not_relock_quota(self):
+        start=SOURCE.index("def _api_football_get_meta")
+        end=SOURCE.index("def _api_football_get(",start)
+        body=SOURCE[start:end]
+        self.assertNotIn("_update_api_state_from_headers",body)
+
     def test_api_429_handling_present(self):
         self.assertIn("r.status_code==429", SOURCE)
         self.assertIn("Retry-After", SOURCE)

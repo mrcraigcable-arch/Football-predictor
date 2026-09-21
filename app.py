@@ -1409,9 +1409,11 @@ def _api_football_fetch_cached(path, params, api_key):
 
 def _api_football_get_meta(path, params, api_key):
     stx=_v28_api_state(); stx["logical_calls"]+=1
-    data=_api_football_fetch_cached(path,params,api_key)
-    _update_api_state_from_headers(data.get("headers",{}),data.get("status"),path)
-    return data
+    # The cached fetch updates quota state only on a real network response.
+    # Replaying its stored headers here would resurrect an expired minute limit
+    # every time a cached empty response is read, permanently blocking fallback
+    # discovery even after the provider's rolling window reset.
+    return _api_football_fetch_cached(path,params,api_key)
 
 def _api_football_get(path, params, api_key):
     return _api_football_get_meta(path,params,api_key).get("response",[])
