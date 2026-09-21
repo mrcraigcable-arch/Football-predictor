@@ -1160,7 +1160,7 @@ def _apply_v28_frozen_calibration(probs,lname):
 
 V27_STATE_SEASONS=["2025-26","2026-27"]
 
-@st.cache_data(ttl=21600,show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def build_live_state_snapshot(code):
     """Build recent team state only. No sklearn model is fitted in normal use."""
     hist=defaultdict(lambda:deque(maxlen=20))

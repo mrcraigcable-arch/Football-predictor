@@ -132,6 +132,11 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("if led.empty:", SOURCE)
         self.assertIn("if hist.empty:", SOURCE)
 
+    def test_live_model_state_uses_resource_cache(self):
+        marker="def build_live_state_snapshot(code):"
+        start=SOURCE.index(marker)
+        self.assertIn("@st.cache_resource",SOURCE[max(0,start-100):start])
+
 
 class PureFunctionTests(unittest.TestCase):
     @classmethod
