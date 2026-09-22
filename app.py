@@ -1953,21 +1953,34 @@ def _anchor_five(frame):
     return q.head(5)
 
 def build_analyst_target_acca(rows,target_odds=50.0,leg_counts=(5,6)):
-    counts=sorted({int(x) for x in leg_counts if int(x)>0}); candidates=[]
+    counts=sorted({int(x) for x in leg_counts if int(x)>0}); final_candidates=[]; provisional_candidates=[]
     for row in rows:
         try: price=float(row.get("Best market odds")); prob=float(row.get("Ranking %"))/100; anchor=float(row.get("Anchor score"))/100
         except Exception: continue
         diag=row.get("Market diagnostic") if isinstance(row.get("Market diagnostic"),dict) else {}
         readiness=str(row.get("Anchor readiness","FINAL"))
+        provider_state=str(row.get("Provider fixture state","")).upper()
+        status_text=" ".join(str(row.get(k,"")) for k in ("Fixture status","External data status","Timing label")).upper()
+        unavailable=(provider_state=="UNAVAILABLE" or any(x in status_text for x in ("POSTPONED","CANCELLED","CANCELED","ABANDONED")))
         if (str(row.get("Pick","")).upper() in ("HOME","AWAY") and str(row.get("Game state","")).upper()=="UPCOMING"
-            and readiness=="FINAL"
-            and np.isfinite(price) and price>1.01 and 0<prob<1 and 0<anchor<=1 and diag.get("stage")=="accepted"):
-            candidates.append({"row":row,"price":price,"prob":prob,"anchor":anchor})
+            and not unavailable and np.isfinite(price) and price>1.01 and 0<prob<1 and 0<anchor<=1 and diag.get("stage")=="accepted"):
+            item={"row":row,"price":price,"prob":prob,"anchor":anchor,"readiness":readiness}
+            if readiness=="FINAL": final_candidates.append(item)
+            elif readiness.startswith("PROVISIONAL"): provisional_candidates.append(item)
+    final_candidates=sorted(final_candidates,key=lambda x:(x["anchor"],x["prob"]),reverse=True)[:14]
+    provisional_candidates=sorted(provisional_candidates,key=lambda x:(x["anchor"],x["prob"]),reverse=True)[:14]
+    need=min(counts) if counts else 5
+    # FINAL remains the preferred ready-to-bet pool. Provider outages must not
+    # make the builder go blank, so use price-verified PROVISIONAL rows only
+    # when there are too few FINAL rows, and keep that downgrade explicit.
+    using_provisional=len(final_candidates)<need
+    candidates=(final_candidates if not using_provisional else final_candidates+provisional_candidates)[:14]
     candidates=sorted(candidates,key=lambda x:(x["anchor"],x["prob"]),reverse=True)[:14]
     valid=[n for n in counts if n<=len(candidates)]
     if not valid:
-        need=min(counts) if counts else 5
-        return {"status":"INSUFFICIENT","legs":[],"reason":f"Only {len(candidates)} FINAL analyst selections have verified current prices; {need} required."}
+        return {"status":"INSUFFICIENT","legs":[],"pool":"PROVISIONAL" if using_provisional else "FINAL",
+                "final_count":len(final_candidates),"provisional_count":len(provisional_candidates),
+                "reason":f"Only {len(final_candidates)} FINAL and {len(provisional_candidates)} price-verified PROVISIONAL analyst selections are usable; {need} required."}
     target=max(float(target_odds),1.01); reaching=[]; below=[]
     for n in valid:
         for combo in combinations(candidates,n):
@@ -1980,19 +1993,20 @@ def build_analyst_target_acca(rows,target_odds=50.0,leg_counts=(5,6)):
             else: below.append(rec)
     if reaching:
         combo,odds,joint,mean_anchor,quality=max(reaching,key=lambda z:(z[4],z[2],z[3],-z[1]))
-        return {"status":"READY","legs":[x["row"] for x in combo],"combined_odds":round(odds,2),
+        return {"status":"READY","pool":"PROVISIONAL" if using_provisional else "FINAL","legs":[x["row"] for x in combo],"combined_odds":round(odds,2),
                 "joint_probability":round(joint*100,2),"mean_anchor_score":round(mean_anchor*100,1),"target_odds":round(target,2)}
     if not below:
-        return {"status":"INSUFFICIENT","legs":[],"reason":"No valid FINAL analyst combination could be formed."}
+        return {"status":"INSUFFICIENT","legs":[],"pool":"PROVISIONAL" if using_provisional else "FINAL",
+                "reason":"No valid analyst combination could be formed from the available price-verified selections."}
     safest=max(below,key=lambda z:(z[4],z[2],z[3],-z[1]))
     closest=max(below,key=lambda z:(z[1],z[4],z[2]))
     def pack(rec):
         combo,odds,joint,mean_anchor,quality=rec
         return {"legs":[x["row"] for x in combo],"combined_odds":round(odds,2),
                 "joint_probability":round(joint*100,2),"mean_anchor_score":round(mean_anchor*100,1)}
-    return {"status":"BELOW_TARGET","target_odds":round(target,2),
+    return {"status":"BELOW_TARGET","pool":"PROVISIONAL" if using_provisional else "FINAL","target_odds":round(target,2),
             "safest":pack(safest),"closest":pack(closest),
-            "reason":"Target is not reachable with the requested FINAL leg count and verified prices."}
+            "reason":f'Target is not reachable with the requested {"PROVISIONAL" if using_provisional else "FINAL"} leg count and verified prices.'}
 
 @st.cache_resource(show_spinner=False)
 def _external_analysis_registry():
@@ -4134,13 +4148,13 @@ if True:
             part=pd.DataFrame(result["legs"]).copy(); part["_goal_price"]=pd.to_numeric(part["Best market odds"],errors="coerce")
             return {"legs":part,"total_odds":float(result["combined_odds"]),"joint_prob":float(result["joint_probability"])/100.0,
                     "mean_anchor":float(result.get("mean_anchor_score",0)),"return":float(stake)*float(result["combined_odds"]),
-                    "target_odds":target_odds,"status":"TARGET REACHED","alternatives":None},None
+                    "target_odds":target_odds,"status":"TARGET REACHED","pool":result.get("pool","FINAL"),"alternatives":None},None
         bundles={}
         for key in ("safest","closest"):
             b=result[key]; part=pd.DataFrame(b["legs"]).copy(); part["_goal_price"]=pd.to_numeric(part["Best market odds"],errors="coerce")
             bundles[key]={"legs":part,"total_odds":float(b["combined_odds"]),"joint_prob":float(b["joint_probability"])/100.0,
                           "mean_anchor":float(b.get("mean_anchor_score",0)),"return":float(stake)*float(b["combined_odds"])}
-        return {"status":"TARGET NOT REACHABLE","target_odds":target_odds,"alternatives":bundles},None
+        return {"status":"TARGET NOT REACHABLE","target_odds":target_odds,"pool":result.get("pool","FINAL"),"alternatives":bundles},None
 
     # Ranking pool: all unfinished upcoming fixtures plus LIVE fixtures that still
     # have a current market. The acca optimiser itself will require verified prices.
@@ -4153,22 +4167,25 @@ if True:
         if _acca_err:
             st.warning(_acca_err["reason"])
         else:
+            _pool=_acca.get("pool","FINAL")
+            if _pool=="PROVISIONAL":
+                st.error("⚠️ PLANNING ONLY — this combination includes PROVISIONAL legs because fewer than the requested number of FINAL selections are available. Recheck fixture status, team news and line-ups before placing any bet.")
             if _acca["status"]=="TARGET REACHED":
                 actual_legs=len(_acca["legs"])
                 m1,m2,m3,m4=st.columns(4)
                 m1.metric("Stake",f"£{acca_stake:,.2f}"); m2.metric("Target",f"£{acca_target:,.2f}")
                 m3.metric("Combined odds",decimal_to_fractional(_acca["total_odds"])); m4.metric("Mean anchor score",f'{_acca.get("mean_anchor",0):.0f}/100')
                 st.caption(f'Model joint chance (independence approximation): {_acca["joint_prob"]*100:.1f}%')
-                st.success(f'Highest-probability {actual_legs}-team FINAL combination found that reaches the target: estimated return £{_acca["return"]:,.2f}.')
+                st.success(f'Highest-probability {actual_legs}-team {_pool} combination found that reaches the target: estimated return £{_acca["return"]:,.2f}.')
                 _show=_acca["legs"].copy(); _show["Selection"]=_show.apply(_team_for_pick,axis=1); _show["Odds"]=_show["_goal_price"].apply(decimal_to_fractional)
-                st.dataframe(_show[["Match date","League","Selection","Ranking %","Anchor score","Stability","Odds"]],hide_index=True,use_container_width=True)
+                st.dataframe(_show[["Match date","League","Selection","Ranking %","Anchor score","Stability","Anchor readiness","Odds"]],hide_index=True,use_container_width=True)
             else:
-                st.warning(f'The requested £{acca_target:,.2f} return cannot be reached with the requested FINAL 5/6-team setting.')
+                st.warning(f'The requested £{acca_target:,.2f} return cannot be reached with the requested {_pool} 5/6-team setting.')
                 for _label,_key in [("🛡️ Safest achievable","safest"),("🎯 Closest to target","closest")]:
                     _b=_acca["alternatives"][_key]
                     st.markdown(f"**{_label}** — est. return £{_b['return']:,.2f} · joint chance {_b['joint_prob']*100:.1f}% · mean anchor {_b['mean_anchor']:.0f}/100")
                     _show=_b["legs"].copy(); _show["Selection"]=_show.apply(_team_for_pick,axis=1); _show["Odds"]=_show["_goal_price"].apply(decimal_to_fractional)
-                    st.dataframe(_show[["Match date","League","Selection","Ranking %","Anchor score","Stability","Odds"]],hide_index=True,use_container_width=True)
+                    st.dataframe(_show[["Match date","League","Selection","Ranking %","Anchor score","Stability","Anchor readiness","Odds"]],hide_index=True,use_container_width=True)
             st.caption("Joint chance is an independence approximation and is used only as a comparison aid.")
 
     st.markdown("""
